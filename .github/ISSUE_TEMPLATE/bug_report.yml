@@ -1,0 +1,45 @@
+name: Reporte de error
+description: Informa un comportamiento reproducible de Raudo.
+title: '[Error] '
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Versión de Raudo
+      placeholder: 1.0.0
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Versión de Windows
+      placeholder: Windows 11, compilación 26100
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Pasos para reproducir
+      description: Incluye sólo la información necesaria y elimina datos sensibles.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Resultado esperado
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Resultado actual
+    validations:
+      required: true
+  - type: checkboxes
+    id: authorization
+    attributes:
+      label: Uso autorizado
+      options:
+        - label: El problema ocurrió en un equipo y tarea donde tengo autorización para usar Raudo.
+          required: true

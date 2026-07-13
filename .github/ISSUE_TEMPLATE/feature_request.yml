@@ -1,0 +1,35 @@
+name: Propuesta de función
+description: Propón una utilidad local y acotada para Raudo.
+title: '[Propuesta] '
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Necesidad
+      description: Describe el problema sin proponer todavía una implementación.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Comportamiento esperado
+    validations:
+      required: true
+  - type: dropdown
+    id: network
+    attributes:
+      label: ¿Requiere red o servicios externos?
+      options:
+        - 'No'
+        - 'Sí'
+        - 'No estoy seguro'
+    validations:
+      required: true
+  - type: textarea
+    id: safety
+    attributes:
+      label: Consideraciones de seguridad
+      description: Indica permisos, datos o posibles usos no previstos.
+    validations:
+      required: true

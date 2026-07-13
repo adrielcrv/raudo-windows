@@ -1,0 +1,126 @@
+using System;
+using System.IO;
+using System.Text;
+using System.Web.Script.Serialization;
+using Microsoft.Win32;
+
+namespace Raudo
+{
+    internal sealed class RaudoSettings
+    {
+        public RaudoSettings()
+        {
+            DurationMinutes = 30;
+        }
+
+        public int DurationMinutes { get; set; }
+
+        public void Normalize()
+        {
+            if (!DurationOption.IsSupported(DurationMinutes))
+            {
+                DurationMinutes = 30;
+            }
+        }
+    }
+
+    internal sealed class SettingsStore
+    {
+        private readonly string settingsPath;
+        private readonly JavaScriptSerializer serializer;
+
+        public SettingsStore()
+            : this(Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Raudo",
+                "settings.json"))
+        {
+        }
+
+        internal SettingsStore(string path)
+        {
+            settingsPath = path;
+            serializer = new JavaScriptSerializer();
+        }
+
+        public RaudoSettings Load()
+        {
+            try
+            {
+                if (File.Exists(settingsPath))
+                {
+                    RaudoSettings loaded = serializer.Deserialize<RaudoSettings>(
+                        File.ReadAllText(settingsPath, Encoding.UTF8));
+                    if (loaded != null)
+                    {
+                        loaded.Normalize();
+                        return loaded;
+                    }
+                }
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+            catch (InvalidOperationException)
+            {
+            }
+
+            return new RaudoSettings();
+        }
+
+        public void Save(RaudoSettings settings)
+        {
+            settings.Normalize();
+            string directory = Path.GetDirectoryName(settingsPath);
+            Directory.CreateDirectory(directory);
+
+            string temporaryPath = settingsPath + ".tmp";
+            File.WriteAllText(
+                temporaryPath,
+                serializer.Serialize(settings),
+                new UTF8Encoding(false));
+
+            if (File.Exists(settingsPath))
+            {
+                File.Replace(temporaryPath, settingsPath, null, true);
+            }
+            else
+            {
+                File.Move(temporaryPath, settingsPath);
+            }
+        }
+    }
+
+    internal static class StartupManager
+    {
+        private const string RunKeyPath = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+        private const string ValueName = "Raudo";
+
+        public static bool IsEnabled()
+        {
+            using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RunKeyPath, false))
+            {
+                return key != null && key.GetValue(ValueName) != null;
+            }
+        }
+
+        public static void SetEnabled(bool enabled)
+        {
+            using (RegistryKey key = Registry.CurrentUser.CreateSubKey(RunKeyPath))
+            {
+                if (enabled)
+                {
+                    string executable = System.Reflection.Assembly.GetExecutingAssembly().Location;
+                    key.SetValue(ValueName, "\"" + executable + "\" --background", RegistryValueKind.String);
+                }
+                else
+                {
+                    key.DeleteValue(ValueName, false);
+                }
+            }
+        }
+    }
+}

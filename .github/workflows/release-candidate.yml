@@ -1,0 +1,43 @@
+name: Release candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Semantic version without the v prefix
+        required: true
+        default: 1.0.0
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+jobs:
+  package:
+    runs-on: windows-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Build, test and package
+        shell: pwsh
+        run: .\scripts\Package.ps1 -Version '${{ inputs.version }}'
+
+      - name: Attest package
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
+        with:
+          subject-path: artifacts/Raudo-v${{ inputs.version }}-win.zip
+
+      - name: Upload candidate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Raudo-v${{ inputs.version }}-win
+          path: |
+            artifacts/Raudo-v${{ inputs.version }}-win.zip
+            artifacts/Raudo-v${{ inputs.version }}-win.zip.sha256
+          if-no-files-found: error
+          retention-days: 14
