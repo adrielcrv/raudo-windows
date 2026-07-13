@@ -12,13 +12,13 @@ USO
 
 MODO MINI
 
-Al acercar el cursor a la burbuja aparecen controles para cambiar al escritorio
-izquierdo o derecho. El botón central muestra las ventanas abiertas en otros
-escritorios y permite traer una al escritorio actual.
+Raudo Mini se recoge como una pestaña estrecha en el borde de la pantalla. Al
+acercar el cursor aparecen únicamente las direcciones de escritorio disponibles.
+El botón central muestra las ventanas abiertas en otros escritorios y permite
+traer una al escritorio actual.
 
-Para mantener la burbuja visible en todos los escritorios, presiona Win + Tab,
-haz clic derecho sobre Raudo Mini y elige Mostrar esta ventana en todos los
-escritorios. Esta configuración pertenece a Windows.
+La pestaña sigue automáticamente al escritorio activo. Si una versión de
+Windows no permite esta función, Raudo muestra la alternativa mediante Win + Tab.
 
 Raudo inicia siempre apagado, se detiene al bloquear o suspender Windows y no
 requiere permisos de administrador. La única conexión de red ocurre cuando el

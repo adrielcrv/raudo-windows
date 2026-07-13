@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Text;
 using System.Threading;
 using System.Windows.Forms;
 using Raudo;
@@ -37,14 +38,24 @@ internal static class TestRunner
 
             if (args.Length == 1 && args[0].StartsWith("--capture-mini-dark=", StringComparison.Ordinal))
             {
-                CaptureMiniUi(args[0].Substring("--capture-mini-dark=".Length), true);
+                CaptureMiniUi(args[0].Substring("--capture-mini-dark=".Length), true, true);
                 Console.WriteLine("PASS");
                 return 0;
             }
 
             if (args.Length == 1 && args[0].StartsWith("--capture-mini-light=", StringComparison.Ordinal))
             {
-                CaptureMiniUi(args[0].Substring("--capture-mini-light=".Length), false);
+                CaptureMiniUi(args[0].Substring("--capture-mini-light=".Length), false, true);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1 && args[0].StartsWith("--capture-mini-edge-dark=", StringComparison.Ordinal))
+            {
+                CaptureMiniUi(
+                    args[0].Substring("--capture-mini-edge-dark=".Length),
+                    true,
+                    false);
                 Console.WriteLine("PASS");
                 return 0;
             }
@@ -58,6 +69,21 @@ internal static class TestRunner
             if (args.Length == 1 && string.Equals(args[0], "--desktop-integration", StringComparison.Ordinal))
             {
                 bool executed = RunVirtualDesktopIntegrationTest();
+                Console.WriteLine(executed ? "PASS" : "SKIP: se requieren al menos dos escritorios virtuales.");
+                return 0;
+            }
+
+            if (args.Length == 1 && args[0].StartsWith("--mini-process-integration=", StringComparison.Ordinal))
+            {
+                int processId;
+                if (!int.TryParse(
+                    args[0].Substring("--mini-process-integration=".Length),
+                    out processId))
+                {
+                    throw new ArgumentException("El identificador de proceso no es válido.");
+                }
+
+                bool executed = RunMiniProcessIntegrationTest(processId);
                 Console.WriteLine(executed ? "PASS" : "SKIP: se requieren al menos dos escritorios virtuales.");
                 return 0;
             }
@@ -114,7 +140,7 @@ internal static class TestRunner
         }
     }
 
-    private static void CaptureMiniUi(string path, bool dark)
+    private static void CaptureMiniUi(string path, bool dark, bool expanded)
     {
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
@@ -123,7 +149,7 @@ internal static class TestRunner
         {
             form.ShowMini();
             form.ApplyTheme(ThemePalette.Create(dark));
-            form.SetExpandedForTesting(true);
+            form.SetExpandedForTesting(expanded);
             Application.DoEvents();
             Thread.Sleep(100);
             Application.DoEvents();
@@ -180,6 +206,24 @@ internal static class TestRunner
         Assert(!light.IsDark && dark.IsDark, "Los temas no conservan su modo.");
         Assert(light.Primary != dark.Primary, "Los temas deben tener paletas independientes.");
 
+        using (VirtualDesktopService desktopService = new VirtualDesktopService())
+        using (MiniForm mini = new MiniForm(desktopService, new RaudoSettings()))
+        {
+            Assert(
+                mini.ClientSize == new Size(18, 44),
+                "La pestaña recogida no tiene el tamaño esperado.");
+            mini.SetExpandedForTesting(true);
+            mini.SetNavigationAvailabilityForTesting(true, true);
+            Assert(mini.ClientSize.Width == 156, "No se mostraron ambas direcciones.");
+            mini.SetNavigationAvailabilityForTesting(true, false);
+            Assert(mini.ClientSize.Width == 104, "No se ocultó la dirección derecha.");
+            mini.SetNavigationAvailabilityForTesting(false, true);
+            Assert(mini.ClientSize.Width == 104, "No se ocultó la dirección izquierda.");
+            mini.SetNavigationAvailabilityForTesting(false, false);
+            Assert(mini.ClientSize.Width == 52, "El control sin direcciones no se compactó.");
+            mini.AllowCloseAndClose();
+        }
+
         DesktopWindow desktopWindow = new DesktopWindow(
             new IntPtr(42),
             "Excel",
@@ -222,9 +266,11 @@ internal static class TestRunner
     {
         string root = Path.Combine(Path.GetTempPath(), "Raudo.Tests", Guid.NewGuid().ToString("N"));
         string handlePath = Path.Combine(root, "window.handle");
+        string pinnedHandlePath = Path.Combine(root, "pinned-window.handle");
         Directory.CreateDirectory(root);
 
         Process child = null;
+        Process pinnedChild = null;
         Form sourceAnchor = null;
         Form destinationAnchor = null;
         DesktopDirection? returnDirection = null;
@@ -240,6 +286,23 @@ internal static class TestRunner
                 Assert(
                     service.TryGetDesktopId(sourceAnchor.Handle, out originalDesktop),
                     "No se pudo identificar el escritorio original.");
+
+                ProcessStartInfo pinnedStartInfo = new ProcessStartInfo();
+                pinnedStartInfo.FileName = Application.ExecutablePath;
+                pinnedStartInfo.Arguments = "--desktop-probe-window=\"" + pinnedHandlePath + "\"";
+                pinnedStartInfo.UseShellExecute = false;
+                pinnedStartInfo.CreateNoWindow = true;
+                pinnedChild = Process.Start(pinnedStartInfo);
+                IntPtr pinnedWindow = WaitForProbeHandle(
+                    pinnedHandlePath,
+                    pinnedChild,
+                    TimeSpan.FromSeconds(5));
+                string pinError;
+                Assert(
+                    service.TryKeepWindowVisibleAcrossDesktops(
+                        pinnedWindow,
+                        out pinError),
+                    pinError ?? "No se pudo mantener la ventana en todos los escritorios.");
 
                 ProcessStartInfo startInfo = new ProcessStartInfo();
                 startInfo.FileName = Application.ExecutablePath;
@@ -275,6 +338,27 @@ internal static class TestRunner
                 {
                     return false;
                 }
+
+                bool pinnedOnCurrentDesktop;
+                Assert(
+                    service.TryIsWindowOnCurrentDesktop(
+                        pinnedWindow,
+                        out pinnedOnCurrentDesktop)
+                        && pinnedOnCurrentDesktop,
+                    "La ventana fijada no siguió al escritorio activo.");
+
+                bool canNavigateLeft;
+                bool canNavigateRight;
+                Assert(
+                    service.TryGetNavigationAvailability(
+                        out canNavigateLeft,
+                        out canNavigateRight),
+                    "No se pudieron consultar los escritorios adyacentes.");
+                Assert(
+                    returnDirection == DesktopDirection.Left
+                        ? canNavigateLeft
+                        : canNavigateRight,
+                    "No se detectó la dirección para regresar al escritorio original.");
 
                 System.Collections.Generic.IList<DesktopWindow> windows;
                 string listError;
@@ -343,11 +427,124 @@ internal static class TestRunner
                 }
             }
 
+            if (pinnedChild != null)
+            {
+                try
+                {
+                    if (!pinnedChild.HasExited)
+                    {
+                        pinnedChild.Kill();
+                        pinnedChild.WaitForExit(3000);
+                    }
+                }
+                finally
+                {
+                    pinnedChild.Dispose();
+                }
+            }
+
             if (Directory.Exists(root))
             {
                 Directory.Delete(root, true);
             }
         }
+    }
+
+    private static bool RunMiniProcessIntegrationTest(int processId)
+    {
+        IntPtr miniWindow = FindMiniWindow(processId);
+        Assert(miniWindow != IntPtr.Zero, "No se encontró la ventana visible de Raudo Mini.");
+
+        DesktopDirection? returnDirection = null;
+        bool switched = false;
+        try
+        {
+            using (VirtualDesktopService service = new VirtualDesktopService())
+            {
+                bool initiallyCurrent;
+                Assert(
+                    service.TryIsWindowOnCurrentDesktop(miniWindow, out initiallyCurrent)
+                        && initiallyCurrent,
+                    "Raudo Mini no está visible en el escritorio inicial.");
+
+                bool canNavigateLeft;
+                bool canNavigateRight;
+                Assert(
+                    service.TryGetNavigationAvailability(
+                        out canNavigateLeft,
+                        out canNavigateRight),
+                    "No se pudieron consultar los escritorios adyacentes.");
+
+                DesktopDirection direction;
+                if (canNavigateRight)
+                {
+                    direction = DesktopDirection.Right;
+                    returnDirection = DesktopDirection.Left;
+                }
+                else if (canNavigateLeft)
+                {
+                    direction = DesktopDirection.Left;
+                    returnDirection = DesktopDirection.Right;
+                }
+                else
+                {
+                    return false;
+                }
+
+                string error;
+                Assert(DesktopNavigation.TrySwitch(direction, out error), error);
+                switched = true;
+                Thread.Sleep(900);
+
+                bool currentAfterSwitch;
+                Assert(
+                    DesktopNativeMethods.IsWindowVisible(miniWindow)
+                        && service.TryIsWindowOnCurrentDesktop(
+                            miniWindow,
+                            out currentAfterSwitch)
+                        && currentAfterSwitch,
+                    "Raudo Mini no siguió al escritorio activo.");
+
+                return true;
+            }
+        }
+        finally
+        {
+            if (switched && returnDirection.HasValue)
+            {
+                string ignored;
+                DesktopNavigation.TrySwitch(returnDirection.Value, out ignored);
+                Thread.Sleep(800);
+            }
+        }
+    }
+
+    private static IntPtr FindMiniWindow(int processId)
+    {
+        IntPtr result = IntPtr.Zero;
+        DesktopNativeMethods.EnumWindows(
+            delegate(IntPtr window, IntPtr parameter)
+            {
+                uint windowProcessId;
+                DesktopNativeMethods.GetWindowThreadProcessId(window, out windowProcessId);
+                if (windowProcessId != (uint)processId
+                    || !DesktopNativeMethods.IsWindowVisible(window))
+                {
+                    return true;
+                }
+
+                StringBuilder title = new StringBuilder(64);
+                DesktopNativeMethods.GetWindowText(window, title, title.Capacity);
+                if (string.Equals(title.ToString(), "Raudo Mini", StringComparison.Ordinal))
+                {
+                    result = window;
+                    return false;
+                }
+
+                return true;
+            },
+            IntPtr.Zero);
+        return result;
     }
 
     private static bool TrySwitchToDifferentDesktop(

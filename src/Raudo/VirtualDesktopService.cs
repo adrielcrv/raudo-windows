@@ -94,11 +94,14 @@ namespace Raudo
             new Guid("C2F03A33-21F5-47FA-B4BB-156362A2F239");
         private static readonly Guid InternalManagerServiceId =
             new Guid("C5E0CDCA-7B6E-41B2-9FC4-D93975CC467B");
+        private static readonly Guid PinnedAppsServiceId =
+            new Guid("B5A399E7-1C87-46B8-88E9-FC5747B171BD");
 
         private IVirtualDesktopManager manager;
         private IVirtualDesktopManagerInternal10 internalManager10;
         private IVirtualDesktopManagerInternal11 internalManager11;
         private IApplicationViewCollection applicationViews;
+        private IVirtualDesktopPinnedApps pinnedApps;
         private readonly int windowsBuild;
         private bool publicInitializationAttempted;
         private bool internalInitializationAttempted;
@@ -121,6 +124,199 @@ namespace Raudo
                 InitializeInternalInterfaces();
                 return applicationViews != null
                     && (internalManager10 != null || internalManager11 != null);
+            }
+        }
+
+        public bool TryKeepWindowVisibleAcrossDesktops(IntPtr window, out string error)
+        {
+            if (window == IntPtr.Zero || !DesktopNativeMethods.IsWindow(window))
+            {
+                error = "La ventana de Raudo todavía no está disponible.";
+                return false;
+            }
+
+            if (!internalInitializationAttempted)
+            {
+                return TryKeepWindowVisibleTransient(window, out error);
+            }
+
+            InitializeInternalInterfaces();
+            if (applicationViews == null || pinnedApps == null)
+            {
+                error = "Windows no permitió mantener Raudo en todos los escritorios.";
+                return false;
+            }
+
+            return TryPinView(window, applicationViews, pinnedApps, out error);
+        }
+
+        private bool TryKeepWindowVisibleTransient(IntPtr window, out string error)
+        {
+            object shellObject = null;
+            IApplicationViewCollection views = null;
+            IVirtualDesktopPinnedApps pins = null;
+            try
+            {
+                if (windowsBuild < 10240 || windowsBuild > 28000)
+                {
+                    error = "Windows no permitió mantener Raudo en todos los escritorios.";
+                    return false;
+                }
+
+                Type shellType = Type.GetTypeFromCLSID(ImmersiveShellClassId, true);
+                shellObject = Activator.CreateInstance(shellType);
+                IComServiceProvider provider = (IComServiceProvider)shellObject;
+
+                Guid viewsId = typeof(IApplicationViewCollection).GUID;
+                object viewsObject = provider.QueryService(ref viewsId, ref viewsId);
+                views = viewsObject as IApplicationViewCollection;
+
+                Guid serviceId = PinnedAppsServiceId;
+                Guid interfaceId = typeof(IVirtualDesktopPinnedApps).GUID;
+                object pinsObject = provider.QueryService(ref serviceId, ref interfaceId);
+                pins = pinsObject as IVirtualDesktopPinnedApps;
+                if (views == null || pins == null)
+                {
+                    error = "Windows no permitió mantener Raudo en todos los escritorios.";
+                    return false;
+                }
+
+                return TryPinView(window, views, pins, out error);
+            }
+            catch (COMException)
+            {
+                error = "Windows no permitió mantener Raudo en todos los escritorios.";
+                return false;
+            }
+            catch (InvalidCastException)
+            {
+                error = "Windows no permitió mantener Raudo en todos los escritorios.";
+                return false;
+            }
+            finally
+            {
+                ReleaseComObject(ref pins);
+                ReleaseComObject(ref views);
+                if (shellObject != null && Marshal.IsComObject(shellObject))
+                {
+                    Marshal.FinalReleaseComObject(shellObject);
+                }
+            }
+        }
+
+        private static bool TryPinView(
+            IntPtr window,
+            IApplicationViewCollection views,
+            IVirtualDesktopPinnedApps pins,
+            out string error)
+        {
+
+            IApplicationView view = null;
+            try
+            {
+                int result = views.GetViewForHwnd(window, out view);
+                if (result < 0 || view == null)
+                {
+                    error = "Windows no pudo identificar la ventana de Raudo.";
+                    return false;
+                }
+
+                if (!pins.IsViewPinned(view))
+                {
+                    pins.PinView(view);
+                }
+
+                error = null;
+                return true;
+            }
+            catch (COMException)
+            {
+                error = "Windows no permitió mantener Raudo en todos los escritorios.";
+                return false;
+            }
+            finally
+            {
+                if (view != null && Marshal.IsComObject(view))
+                {
+                    Marshal.FinalReleaseComObject(view);
+                }
+            }
+        }
+
+        public bool TryGetNavigationAvailability(
+            out bool canNavigateLeft,
+            out bool canNavigateRight)
+        {
+            canNavigateLeft = false;
+            canNavigateRight = false;
+            InitializeInternalInterfaces();
+
+            if (internalManager10 == null && internalManager11 == null)
+            {
+                return false;
+            }
+
+            object current = null;
+            object left = null;
+            object right = null;
+            try
+            {
+                if (internalManager11 != null)
+                {
+                    IVirtualDesktop11 currentDesktop = internalManager11.GetCurrentDesktop();
+                    current = currentDesktop;
+
+                    IVirtualDesktop11 leftDesktop;
+                    int leftResult = internalManager11.GetAdjacentDesktop(
+                        currentDesktop,
+                        3,
+                        out leftDesktop);
+                    left = leftDesktop;
+                    canNavigateLeft = leftResult >= 0 && leftDesktop != null;
+
+                    IVirtualDesktop11 rightDesktop;
+                    int rightResult = internalManager11.GetAdjacentDesktop(
+                        currentDesktop,
+                        4,
+                        out rightDesktop);
+                    right = rightDesktop;
+                    canNavigateRight = rightResult >= 0 && rightDesktop != null;
+                }
+                else
+                {
+                    IVirtualDesktop10 currentDesktop = internalManager10.GetCurrentDesktop();
+                    current = currentDesktop;
+
+                    IVirtualDesktop10 leftDesktop;
+                    int leftResult = internalManager10.GetAdjacentDesktop(
+                        currentDesktop,
+                        3,
+                        out leftDesktop);
+                    left = leftDesktop;
+                    canNavigateLeft = leftResult >= 0 && leftDesktop != null;
+
+                    IVirtualDesktop10 rightDesktop;
+                    int rightResult = internalManager10.GetAdjacentDesktop(
+                        currentDesktop,
+                        4,
+                        out rightDesktop);
+                    right = rightDesktop;
+                    canNavigateRight = rightResult >= 0 && rightDesktop != null;
+                }
+
+                return true;
+            }
+            catch (COMException)
+            {
+                canNavigateLeft = false;
+                canNavigateRight = false;
+                return false;
+            }
+            finally
+            {
+                ReleaseComObject(ref right);
+                ReleaseComObject(ref left);
+                ReleaseComObject(ref current);
             }
         }
 
@@ -252,6 +448,14 @@ namespace Raudo
                 && desktopId != Guid.Empty;
         }
 
+        internal bool TryIsWindowOnCurrentDesktop(IntPtr window, out bool isCurrent)
+        {
+            isCurrent = false;
+            return EnsurePublicManager()
+                && window != IntPtr.Zero
+                && manager.IsWindowOnCurrentVirtualDesktop(window, out isCurrent) >= 0;
+        }
+
         public void Dispose()
         {
             if (manager != null)
@@ -261,6 +465,7 @@ namespace Raudo
             }
 
             ReleaseComObject(ref applicationViews);
+            ReleaseComObject(ref pinnedApps);
             ReleaseComObject(ref internalManager11);
             ReleaseComObject(ref internalManager10);
         }
@@ -325,6 +530,27 @@ namespace Raudo
                         compatibilityStatus = "Windows 10 disponible.";
                     }
                 }
+
+                try
+                {
+                    Guid serviceId = PinnedAppsServiceId;
+                    Guid interfaceId = typeof(IVirtualDesktopPinnedApps).GUID;
+                    object pinnedObject = provider.QueryService(
+                        ref serviceId,
+                        ref interfaceId);
+                    if (pinnedObject != null)
+                    {
+                        pinnedApps = (IVirtualDesktopPinnedApps)pinnedObject;
+                    }
+                }
+                catch (COMException)
+                {
+                    pinnedApps = null;
+                }
+                catch (InvalidCastException)
+                {
+                    pinnedApps = null;
+                }
             }
             catch (COMException exception)
             {
@@ -332,6 +558,7 @@ namespace Raudo
                     "Inicialización COM falló con 0x{0:X8}.",
                     exception.ErrorCode);
                 ReleaseComObject(ref applicationViews);
+                ReleaseComObject(ref pinnedApps);
                 ReleaseComObject(ref internalManager11);
                 ReleaseComObject(ref internalManager10);
             }
@@ -339,6 +566,7 @@ namespace Raudo
             {
                 compatibilityStatus = "Interfaz COM inesperada: " + exception.Message;
                 ReleaseComObject(ref applicationViews);
+                ReleaseComObject(ref pinnedApps);
                 ReleaseComObject(ref internalManager11);
                 ReleaseComObject(ref internalManager10);
             }
@@ -621,6 +849,12 @@ namespace Raudo
         void MoveViewToDesktop(IApplicationView view, IVirtualDesktop10 desktop);
         bool CanViewMoveDesktops(IApplicationView view);
         IVirtualDesktop10 GetCurrentDesktop();
+        void GetDesktops(out IObjectArray desktops);
+        [PreserveSig]
+        int GetAdjacentDesktop(
+            IVirtualDesktop10 from,
+            int direction,
+            out IVirtualDesktop10 desktop);
     }
 
     [ComImport]
@@ -632,6 +866,39 @@ namespace Raudo
         void MoveViewToDesktop(IApplicationView view, IVirtualDesktop11 desktop);
         bool CanViewMoveDesktops(IApplicationView view);
         IVirtualDesktop11 GetCurrentDesktop();
+        void GetDesktops(out IObjectArray desktops);
+        [PreserveSig]
+        int GetAdjacentDesktop(
+            IVirtualDesktop11 from,
+            int direction,
+            out IVirtualDesktop11 desktop);
+    }
+
+    [ComImport]
+    [Guid("4CE81583-1E4C-4632-A621-07A53543148F")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    internal interface IVirtualDesktopPinnedApps
+    {
+        [return: MarshalAs(UnmanagedType.Bool)]
+        bool IsAppIdPinned([MarshalAs(UnmanagedType.LPWStr)] string applicationId);
+        void PinAppID([MarshalAs(UnmanagedType.LPWStr)] string applicationId);
+        void UnpinAppID([MarshalAs(UnmanagedType.LPWStr)] string applicationId);
+        [return: MarshalAs(UnmanagedType.Bool)]
+        bool IsViewPinned(IApplicationView applicationView);
+        void PinView(IApplicationView applicationView);
+        void UnpinView(IApplicationView applicationView);
+    }
+
+    [ComImport]
+    [Guid("92CA9DCD-5622-4BBA-A805-5E9F541BD8C9")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    internal interface IObjectArray
+    {
+        void GetCount(out int count);
+        void GetAt(
+            int index,
+            ref Guid interfaceId,
+            [MarshalAs(UnmanagedType.Interface)] out object value);
     }
 
     [ComImport]
@@ -708,6 +975,17 @@ namespace Raudo
         [DllImport("user32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool ShowWindowAsync(IntPtr window, int command);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool SetWindowPos(
+            IntPtr window,
+            IntPtr insertAfter,
+            int x,
+            int y,
+            int width,
+            int height,
+            uint flags);
 
         [DllImport("dwmapi.dll")]
         internal static extern int DwmGetWindowAttribute(

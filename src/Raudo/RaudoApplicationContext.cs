@@ -255,7 +255,11 @@ namespace Raudo
 
             SaveSettings();
 
-            if (enabled && offerPinHelp && !settings.MiniHintShown)
+            if (enabled
+                && offerPinHelp
+                && miniForm != null
+                && !miniForm.FollowsActiveDesktop
+                && !settings.MiniHintShown)
             {
                 settings.MiniHintShown = true;
                 SaveSettings();
@@ -310,6 +314,17 @@ namespace Raudo
                     if (keepActiveService.IsActive)
                     {
                         keepActiveService.Stop("Detenido al cerrar la sesión interactiva");
+                    }
+                });
+            }
+            else if (eventArgs.Reason == SessionSwitchReason.SessionUnlock
+                || eventArgs.Reason == SessionSwitchReason.RemoteConnect)
+            {
+                RunOnUiThread(delegate
+                {
+                    if (settings.MiniModeEnabled)
+                    {
+                        EnsureMiniForm();
                     }
                 });
             }
@@ -485,12 +500,13 @@ namespace Raudo
             IWin32Window owner = miniForm == null ? (IWin32Window)form : miniForm;
             MessageBox.Show(
                 owner,
-                "Para mantener la burbuja en todos los escritorios:\n\n"
+                "Windows no permitió fijar Raudo automáticamente. "
+                    + "Puedes configurarlo una sola vez:\n\n"
                     + "1. Presiona Win + Tab.\n"
                     + "2. Haz clic derecho sobre Raudo Mini.\n"
                     + "3. Elige Mostrar esta ventana en todos los escritorios.\n\n"
-                    + "Windows conservará el control de esta configuración.",
-                "Modo Mini",
+                    + "Raudo seguirá funcionando aunque esta opción no esté disponible.",
+                "Visibilidad en escritorios",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
         }
