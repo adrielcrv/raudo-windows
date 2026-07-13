@@ -18,18 +18,24 @@ namespace Raudo
 
     internal sealed class MiniForm : Form
     {
-        private const int CollapsedSize = 52;
-        private const int ExpandedWidth = 172;
+        private const int CollapsedWidth = 18;
+        private const int CollapsedHeight = 44;
+        private const int CollapsedHiddenOffset = 6;
         private const int ExpandedHeight = 52;
-        private const int ArrowZoneWidth = 56;
+        private const int ArrowZoneWidth = 52;
+        private const int CenterZoneWidth = 52;
+        private const uint SetWindowPosNoZOrder = 0x0004;
+        private const uint SetWindowPosNoActivate = 0x0010;
 
         private readonly VirtualDesktopService desktopService;
         private readonly ContextMenuStrip windowMenu;
         private readonly Font windowMenuHeaderFont;
         private readonly Timer collapseTimer;
+        private readonly Timer navigationRefreshTimer;
+        private readonly ToolTip toolTip;
 
         private ThemePalette palette;
-        private Point collapsedCenter;
+        private Point dockAnchor;
         private Point dragStartCursor;
         private Point dragStartLocation;
         private MiniHitZone hoverZone;
@@ -38,6 +44,9 @@ namespace Raudo
         private bool dragging;
         private bool active;
         private bool allowClose;
+        private bool canNavigateLeft = true;
+        private bool canNavigateRight = true;
+        private bool followsActiveDesktop;
 
         public MiniForm(VirtualDesktopService service, RaudoSettings settings)
         {
@@ -47,8 +56,8 @@ namespace Raudo
             AccessibleName = "Modo Mini de Raudo";
             AccessibleDescription = "Navega entre escritorios y trae ventanas al escritorio actual.";
             AutoScaleMode = AutoScaleMode.Dpi;
-            ClientSize = new Size(CollapsedSize, CollapsedSize);
             FormBorderStyle = FormBorderStyle.None;
+            ClientSize = new Size(CollapsedWidth, CollapsedHeight);
             MaximizeBox = false;
             MinimizeBox = false;
             ShowInTaskbar = false;
@@ -57,7 +66,7 @@ namespace Raudo
             DoubleBuffered = true;
             KeyPreview = true;
 
-            collapsedCenter = GetInitialCenter(settings);
+            dockAnchor = GetInitialDockAnchor(settings);
 
             windowMenu = new ContextMenuStrip();
             windowMenu.Font = new Font("Segoe UI", 9.5F, FontStyle.Regular, GraphicsUnit.Point);
@@ -68,14 +77,28 @@ namespace Raudo
             collapseTimer.Interval = 350;
             collapseTimer.Tick += CollapseTimerTick;
 
+            navigationRefreshTimer = new Timer();
+            navigationRefreshTimer.Interval = 450;
+            navigationRefreshTimer.Tick += NavigationRefreshTimerTick;
+
+            toolTip = new ToolTip();
+            toolTip.InitialDelay = 350;
+            toolTip.ReshowDelay = 100;
+            toolTip.SetToolTip(this, "Raudo Mini");
+
             ApplyTheme(ThemeService.Current());
-            LayoutAtCenter();
+            LayoutAtAnchor();
         }
 
         public event EventHandler OpenMainRequested;
         public event EventHandler HideRequested;
         public event EventHandler PinHelpRequested;
         public event EventHandler<MiniPositionChangedEventArgs> PositionChangedByUser;
+
+        public bool FollowsActiveDesktop
+        {
+            get { return followsActiveDesktop; }
+        }
 
         protected override bool ShowWithoutActivation
         {
@@ -112,19 +135,25 @@ namespace Raudo
                 Show();
             }
 
+            LayoutAtAnchor();
             TopMost = true;
+            string ignored;
+            followsActiveDesktop = desktopService.TryKeepWindowVisibleAcrossDesktops(
+                Handle,
+                out ignored);
         }
 
         public void EnsureVisibleOnScreen()
         {
-            collapsedCenter = ClampCenter(collapsedCenter);
-            LayoutAtCenter();
+            dockAnchor = ClampDockAnchor(dockAnchor);
+            LayoutAtAnchor();
         }
 
         public void AllowCloseAndClose()
         {
             allowClose = true;
             collapseTimer.Stop();
+            navigationRefreshTimer.Stop();
             Close();
         }
 
@@ -133,9 +162,18 @@ namespace Raudo
             SetExpanded(shouldExpand);
         }
 
+        internal void SetNavigationAvailabilityForTesting(bool left, bool right)
+        {
+            canNavigateLeft = left;
+            canNavigateRight = right;
+            UpdateClientSizeForState();
+            LayoutAtAnchor();
+        }
+
         protected override void OnHandleCreated(EventArgs eventArgs)
         {
             base.OnHandleCreated(eventArgs);
+            LayoutAtAnchor();
             UpdateWindowRegion();
             if (palette != null)
             {
@@ -163,17 +201,28 @@ namespace Raudo
                 eventArgs.Graphics.DrawPath(border, path);
             }
 
-            if (expanded)
+            if (!expanded)
+            {
+                DrawDockHandle(eventArgs.Graphics);
+                return;
+            }
+
+            if (canNavigateLeft)
             {
                 DrawHitZone(eventArgs.Graphics, MiniHitZone.Left);
-                DrawHitZone(eventArgs.Graphics, MiniHitZone.Right);
                 DrawArrow(eventArgs.Graphics, true);
+            }
+
+            if (canNavigateRight)
+            {
+                DrawHitZone(eventArgs.Graphics, MiniHitZone.Right);
                 DrawArrow(eventArgs.Graphics, false);
             }
 
             int markSize = 34;
+            Rectangle centerBounds = GetZoneBounds(MiniHitZone.Center);
             Rectangle markBounds = new Rectangle(
-                (ClientSize.Width - markSize) / 2,
+                centerBounds.Left + (centerBounds.Width - markSize) / 2,
                 (ClientSize.Height - markSize) / 2,
                 markSize,
                 markSize);
@@ -188,6 +237,7 @@ namespace Raudo
         {
             base.OnMouseEnter(eventArgs);
             collapseTimer.Stop();
+            RefreshNavigationAvailability();
             SetExpanded(true);
         }
 
@@ -219,10 +269,7 @@ namespace Raudo
                     Point requested = new Point(
                         dragStartLocation.X + cursor.X - dragStartCursor.X,
                         dragStartLocation.Y + cursor.Y - dragStartCursor.Y);
-                    Location = ClampLocation(requested, Size);
-                    collapsedCenter = new Point(
-                        Left + Width / 2,
-                        Top + Height / 2);
+                    Location = ClampDragLocation(requested, Size);
                 }
             }
 
@@ -273,12 +320,14 @@ namespace Raudo
 
             if (wasDragging)
             {
-                collapsedCenter = ClampCenter(collapsedCenter);
+                dockAnchor = GetDockAnchor(Cursor.Position);
                 EventHandler<MiniPositionChangedEventArgs> positionHandler = PositionChangedByUser;
                 if (positionHandler != null)
                 {
-                    positionHandler(this, new MiniPositionChangedEventArgs(collapsedCenter));
+                    positionHandler(this, new MiniPositionChangedEventArgs(dockAnchor));
                 }
+
+                SetExpanded(false);
             }
             else if (releasedZone == pressedZone)
             {
@@ -305,12 +354,18 @@ namespace Raudo
             base.OnKeyDown(eventArgs);
             if (eventArgs.KeyCode == Keys.Left)
             {
-                SwitchDesktop(DesktopDirection.Left);
+                if (canNavigateLeft)
+                {
+                    SwitchDesktop(DesktopDirection.Left);
+                }
                 eventArgs.Handled = true;
             }
             else if (eventArgs.KeyCode == Keys.Right)
             {
-                SwitchDesktop(DesktopDirection.Right);
+                if (canNavigateRight)
+                {
+                    SwitchDesktop(DesktopDirection.Right);
+                }
                 eventArgs.Handled = true;
             }
             else if (eventArgs.KeyCode == Keys.Enter || eventArgs.KeyCode == Keys.Space)
@@ -347,6 +402,8 @@ namespace Raudo
             if (disposing)
             {
                 collapseTimer.Dispose();
+                navigationRefreshTimer.Dispose();
+                toolTip.Dispose();
                 ClearWindowMenuItems();
                 windowMenu.Dispose();
                 windowMenuHeaderFont.Dispose();
@@ -357,6 +414,12 @@ namespace Raudo
 
         private void SwitchDesktop(DesktopDirection direction)
         {
+            if ((direction == DesktopDirection.Left && !canNavigateLeft)
+                || (direction == DesktopDirection.Right && !canNavigateRight))
+            {
+                return;
+            }
+
             string error;
             if (!DesktopNavigation.TrySwitch(direction, out error))
             {
@@ -366,7 +429,11 @@ namespace Raudo
                     "Raudo",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Warning);
+                return;
             }
+
+            navigationRefreshTimer.Stop();
+            navigationRefreshTimer.Start();
         }
 
         private void ShowWindowMenu()
@@ -430,16 +497,28 @@ namespace Raudo
 
             windowMenu.Items.Add(new ToolStripSeparator());
 
-            ToolStripMenuItem pinHelp = new ToolStripMenuItem("Mostrar en todos los escritorios…");
-            pinHelp.Click += delegate
+            ToolStripMenuItem desktopVisibility;
+            if (followsActiveDesktop)
             {
-                EventHandler handler = PinHelpRequested;
-                if (handler != null)
+                desktopVisibility = new ToolStripMenuItem(
+                    "Visible en todos los escritorios");
+                desktopVisibility.Checked = true;
+                desktopVisibility.Enabled = false;
+            }
+            else
+            {
+                desktopVisibility = new ToolStripMenuItem(
+                    "Configurar visibilidad en escritorios…");
+                desktopVisibility.Click += delegate
                 {
-                    handler(this, EventArgs.Empty);
-                }
-            };
-            windowMenu.Items.Add(pinHelp);
+                    EventHandler handler = PinHelpRequested;
+                    if (handler != null)
+                    {
+                        handler(this, EventArgs.Empty);
+                    }
+                };
+            }
+            windowMenu.Items.Add(desktopVisibility);
 
             ToolStripMenuItem open = new ToolStripMenuItem("Abrir Raudo");
             open.Click += delegate
@@ -498,15 +577,34 @@ namespace Raudo
         {
             if (expanded == shouldExpand)
             {
+                UpdateClientSizeForState();
                 return;
             }
 
             expanded = shouldExpand;
-            ClientSize = shouldExpand
-                ? new Size(ExpandedWidth, ExpandedHeight)
-                : new Size(CollapsedSize, CollapsedSize);
-            LayoutAtCenter();
+            UpdateClientSizeForState();
+            LayoutAtAnchor();
             Invalidate();
+        }
+
+        private void UpdateClientSizeForState()
+        {
+            Size requested = GetRequestedSize();
+            if (ClientSize != requested)
+            {
+                ClientSize = requested;
+            }
+        }
+
+        private Size GetRequestedSize()
+        {
+            return expanded
+                ? new Size(
+                    CenterZoneWidth
+                        + (canNavigateLeft ? ArrowZoneWidth : 0)
+                        + (canNavigateRight ? ArrowZoneWidth : 0),
+                    ExpandedHeight)
+                : new Size(CollapsedWidth, CollapsedHeight);
         }
 
         private void ScheduleCollapse()
@@ -524,6 +622,34 @@ namespace Raudo
             }
         }
 
+        private void NavigationRefreshTimerTick(object sender, EventArgs eventArgs)
+        {
+            navigationRefreshTimer.Stop();
+            RefreshNavigationAvailability();
+        }
+
+        private void RefreshNavigationAvailability()
+        {
+            bool left;
+            bool right;
+            if (!desktopService.TryGetNavigationAvailability(out left, out right))
+            {
+                left = true;
+                right = true;
+            }
+
+            bool changed = canNavigateLeft != left || canNavigateRight != right;
+            canNavigateLeft = left;
+            canNavigateRight = right;
+            if (expanded && changed)
+            {
+                UpdateClientSizeForState();
+                LayoutAtAnchor();
+            }
+
+            Invalidate();
+        }
+
         private MiniHitZone HitTest(Point point)
         {
             if (!expanded)
@@ -531,12 +657,12 @@ namespace Raudo
                 return MiniHitZone.Center;
             }
 
-            if (point.X < ArrowZoneWidth)
+            if (canNavigateLeft && GetZoneBounds(MiniHitZone.Left).Contains(point))
             {
                 return MiniHitZone.Left;
             }
 
-            if (point.X >= ClientSize.Width - ArrowZoneWidth)
+            if (canNavigateRight && GetZoneBounds(MiniHitZone.Right).Contains(point))
             {
                 return MiniHitZone.Right;
             }
@@ -551,9 +677,8 @@ namespace Raudo
                 return;
             }
 
-            Rectangle area = zone == MiniHitZone.Left
-                ? new Rectangle(4, 4, ArrowZoneWidth - 6, ClientSize.Height - 8)
-                : new Rectangle(ClientSize.Width - ArrowZoneWidth + 2, 4, ArrowZoneWidth - 6, ClientSize.Height - 8);
+            Rectangle area = GetZoneBounds(zone);
+            area.Inflate(-4, -4);
             using (GraphicsPath path = DrawingPaths.RoundedRectangle(area, area.Height / 2))
             using (SolidBrush brush = new SolidBrush(palette.SurfaceRaised))
             {
@@ -563,7 +688,8 @@ namespace Raudo
 
         private void DrawArrow(Graphics graphics, bool left)
         {
-            int centerX = left ? 29 : ClientSize.Width - 29;
+            Rectangle zone = GetZoneBounds(left ? MiniHitZone.Left : MiniHitZone.Right);
+            int centerX = zone.Left + zone.Width / 2;
             int centerY = ClientSize.Height / 2;
             int tipX = centerX + (left ? -3 : 3);
             int tailX = centerX + (left ? 3 : -3);
@@ -586,25 +712,108 @@ namespace Raudo
             }
         }
 
-        private void LayoutAtCenter()
+        private void DrawDockHandle(Graphics graphics)
         {
-            Point requested = new Point(
-                collapsedCenter.X - Width / 2,
-                collapsedCenter.Y - Height / 2);
-            Location = ClampLocation(requested, Size);
+            Rectangle accent = new Rectangle(
+                (ClientSize.Width - 5) / 2,
+                9,
+                5,
+                ClientSize.Height - 18);
+            using (GraphicsPath path = DrawingPaths.RoundedRectangle(accent, 3))
+            using (SolidBrush brush = new SolidBrush(active ? palette.Active : palette.Primary))
+            {
+                graphics.FillPath(brush, path);
+            }
         }
 
-        private Point ClampCenter(Point center)
+        private Rectangle GetZoneBounds(MiniHitZone zone)
         {
-            Screen screen = Screen.FromPoint(center);
+            int centerLeft = canNavigateLeft ? ArrowZoneWidth : 0;
+            if (zone == MiniHitZone.Left)
+            {
+                return new Rectangle(0, 0, ArrowZoneWidth, ClientSize.Height);
+            }
+
+            if (zone == MiniHitZone.Right)
+            {
+                return new Rectangle(
+                    centerLeft + CenterZoneWidth,
+                    0,
+                    ArrowZoneWidth,
+                    ClientSize.Height);
+            }
+
+            return new Rectangle(centerLeft, 0, CenterZoneWidth, ClientSize.Height);
+        }
+
+        private void LayoutAtAnchor()
+        {
+            dockAnchor = ClampDockAnchor(dockAnchor);
+            Screen screen = Screen.FromPoint(dockAnchor);
             Rectangle area = screen.WorkingArea;
-            int margin = CollapsedSize / 2 + 4;
-            return new Point(
-                Math.Max(area.Left + margin, Math.Min(area.Right - margin, center.X)),
-                Math.Max(area.Top + margin, Math.Min(area.Bottom - margin, center.Y)));
+            bool dockedLeft = IsDockedLeft(dockAnchor, area);
+            Size requested = GetRequestedSize();
+            int x;
+            if (expanded)
+            {
+                x = dockedLeft
+                    ? area.Left + 4
+                    : area.Right - requested.Width - 4;
+            }
+            else
+            {
+                x = dockedLeft
+                    ? area.Left - CollapsedHiddenOffset
+                    : area.Right - requested.Width + CollapsedHiddenOffset;
+            }
+
+            int y = Math.Max(
+                area.Top + 4,
+                Math.Min(
+                    area.Bottom - requested.Height - 4,
+                    dockAnchor.Y - requested.Height / 2));
+            if (IsHandleCreated)
+            {
+                DesktopNativeMethods.SetWindowPos(
+                    Handle,
+                    IntPtr.Zero,
+                    x,
+                    y,
+                    requested.Width,
+                    requested.Height,
+                    SetWindowPosNoZOrder | SetWindowPosNoActivate);
+            }
+            else
+            {
+                Location = new Point(x, y);
+            }
         }
 
-        private static Point ClampLocation(Point requested, Size size)
+        private static Point ClampDockAnchor(Point anchor)
+        {
+            Screen screen = Screen.FromPoint(anchor);
+            Rectangle area = screen.WorkingArea;
+            bool dockedLeft = IsDockedLeft(anchor, area);
+            int yMargin = CollapsedHeight / 2 + 4;
+            return new Point(
+                dockedLeft ? area.Left : area.Right - 1,
+                Math.Max(
+                    area.Top + yMargin,
+                    Math.Min(area.Bottom - yMargin, anchor.Y)));
+        }
+
+        private static Point GetDockAnchor(Point cursor)
+        {
+            Screen screen = Screen.FromPoint(cursor);
+            Rectangle area = screen.WorkingArea;
+            return new Point(
+                Math.Abs(cursor.X - area.Left) <= Math.Abs(cursor.X - (area.Right - 1))
+                    ? area.Left
+                    : area.Right - 1,
+                cursor.Y);
+        }
+
+        private static Point ClampDragLocation(Point requested, Size size)
         {
             Screen screen = Screen.FromPoint(new Point(
                 requested.X + size.Width / 2,
@@ -615,17 +824,23 @@ namespace Raudo
                 Math.Max(area.Top + 4, Math.Min(area.Bottom - size.Height - 4, requested.Y)));
         }
 
-        private static Point GetInitialCenter(RaudoSettings settings)
+        private static Point GetInitialDockAnchor(RaudoSettings settings)
         {
             if (settings.MiniCenterX >= 0 && settings.MiniCenterY >= 0)
             {
-                return new Point(settings.MiniCenterX, settings.MiniCenterY);
+                return ClampDockAnchor(new Point(
+                    settings.MiniCenterX,
+                    settings.MiniCenterY));
             }
 
             Rectangle area = Screen.PrimaryScreen.WorkingArea;
-            return new Point(
-                area.Right - CollapsedSize / 2 - 18,
-                area.Bottom - CollapsedSize / 2 - 18);
+            return new Point(area.Right - 1, area.Bottom - 72);
+        }
+
+        private static bool IsDockedLeft(Point anchor, Rectangle area)
+        {
+            return Math.Abs(anchor.X - area.Left)
+                <= Math.Abs(anchor.X - (area.Right - 1));
         }
 
         private void UpdateWindowRegion()

@@ -30,19 +30,20 @@ Abre la Herramienta Recortes mediante el protocolo `ms-screenclip` incluido en W
 
 ### Modo Mini
 
-- Muestra una burbuja compacta, movible y siempre encima.
-- Expone controles para cambiar al escritorio virtual izquierdo o derecho.
+- Se recoge como una pestaña estrecha parcialmente oculta en el borde de la pantalla.
+- Sigue automáticamente al escritorio activo y permanece siempre encima.
+- Muestra únicamente las direcciones de escritorio que están disponibles.
 - Consulta las ventanas de otros escritorios únicamente al abrir el selector.
 - Permite traer una ventana elegida al escritorio actual sin cerrarla.
-- Recuerda su posición y puede ocultarse desde la propia burbuja o la bandeja.
+- Recuerda el borde y la altura elegidos; puede ocultarse desde la propia pestaña o la bandeja.
 
 <p align="center">
-  <img src="docs/raudo-mini-dark.png" width="172" alt="Modo Mini de Raudo">
+  <img src="docs/raudo-mini-dark.png" width="156" alt="Modo Mini de Raudo">
 </p>
 
-Para conservar la burbuja en todos los escritorios, abre `Win + Tab`, haz clic derecho sobre **Raudo Mini** y selecciona **Mostrar esta ventana en todos los escritorios**. Raudo delega este anclaje a Windows para evitar modificar la configuración del sistema mediante interfaces privadas.
+Raudo solicita a Windows que muestre únicamente su pestaña Mini en todos los escritorios. No modifica la configuración global de Vista de tareas. Si una versión de Windows no permite el anclaje automático, Raudo conserva como alternativa la configuración manual mediante `Win + Tab`.
 
-La detección de ventanas utiliza la interfaz pública `IVirtualDesktopManager`. Windows restringe el movimiento de ventanas pertenecientes a otros procesos; esa operación emplea una capa de compatibilidad limitada por versión y se desactiva de forma segura si una actualización de Windows cambia el contrato interno. Raudo no instala controladores, servicios ni procesos auxiliares.
+La detección de ventanas utiliza la interfaz pública `IVirtualDesktopManager`. El seguimiento de la pestaña, los límites de navegación y el movimiento de ventanas entre procesos emplean una capa de compatibilidad limitada por versión; esas funciones se desactivan de forma segura si una actualización de Windows cambia el contrato interno. Raudo no instala controladores, servicios ni procesos auxiliares.
 
 ## Privacidad y red
 
