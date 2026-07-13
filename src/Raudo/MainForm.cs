@@ -16,6 +16,16 @@ namespace Raudo
         public bool Enabled { get; private set; }
     }
 
+    internal sealed class MiniModeChangedEventArgs : EventArgs
+    {
+        public MiniModeChangedEventArgs(bool enabled)
+        {
+            Enabled = enabled;
+        }
+
+        public bool Enabled { get; private set; }
+    }
+
     internal sealed class MainForm : Form
     {
         private readonly KeepActiveService keepActiveService;
@@ -39,6 +49,10 @@ namespace Raudo
         private readonly Label captureDescriptionLabel;
         private readonly RoundedButton captureButton;
         private readonly RoundedPanel startupCard;
+        private readonly Label miniTitleLabel;
+        private readonly Label miniDescriptionLabel;
+        private readonly ToggleSwitch miniToggle;
+        private readonly Panel preferencesDivider;
         private readonly Label startupTitleLabel;
         private readonly Label startupDescriptionLabel;
         private readonly ToggleSwitch startupToggle;
@@ -50,6 +64,7 @@ namespace Raudo
         private ThemePalette palette;
         private bool allowClose;
         private bool suppressStartupChange;
+        private bool suppressMiniModeChange;
 
         public MainForm(KeepActiveService service, RaudoSettings currentSettings, Icon appIcon)
         {
@@ -58,7 +73,7 @@ namespace Raudo
 
             Text = "Raudo";
             AccessibleDescription = "Utilidades locales y ligeras para Windows";
-            ClientSize = new Size(540, 650);
+            ClientSize = new Size(540, 696);
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             MinimizeBox = true;
@@ -201,15 +216,42 @@ namespace Raudo
 
             startupCard = new RoundedPanel();
             startupCard.Location = new Point(28, 518);
-            startupCard.Size = new Size(484, 72);
+            startupCard.Size = new Size(484, 118);
             startupCard.Radius = 16;
             Controls.Add(startupCard);
+
+            miniTitleLabel = CreateLabel(
+                "Modo Mini",
+                9.5F,
+                FontStyle.Bold,
+                new Point(22, 10),
+                new Size(260, 25));
+            startupCard.Controls.Add(miniTitleLabel);
+
+            miniDescriptionLabel = CreateLabel(
+                "Navega entre escritorios y trae ventanas.",
+                8.5F,
+                FontStyle.Regular,
+                new Point(23, 34),
+                new Size(350, 22));
+            startupCard.Controls.Add(miniDescriptionLabel);
+
+            miniToggle = new ToggleSwitch();
+            miniToggle.Location = new Point(414, 17);
+            miniToggle.AccessibleName = "Activar Modo Mini";
+            miniToggle.CheckedChanged += MiniToggleCheckedChanged;
+            startupCard.Controls.Add(miniToggle);
+
+            preferencesDivider = new Panel();
+            preferencesDivider.Location = new Point(22, 59);
+            preferencesDivider.Size = new Size(440, 1);
+            startupCard.Controls.Add(preferencesDivider);
 
             startupTitleLabel = CreateLabel(
                 "Iniciar con Windows",
                 9.5F,
                 FontStyle.Bold,
-                new Point(22, 12),
+                new Point(22, 64),
                 new Size(260, 25));
             startupCard.Controls.Add(startupTitleLabel);
 
@@ -217,12 +259,12 @@ namespace Raudo
                 "Raudo inicia apagado y permanece en la bandeja.",
                 8.5F,
                 FontStyle.Regular,
-                new Point(23, 37),
+                new Point(23, 88),
                 new Size(350, 22));
             startupCard.Controls.Add(startupDescriptionLabel);
 
             startupToggle = new ToggleSwitch();
-            startupToggle.Location = new Point(414, 23);
+            startupToggle.Location = new Point(414, 71);
             startupToggle.AccessibleName = "Iniciar Raudo con Windows";
             startupToggle.CheckedChanged += StartupToggleCheckedChanged;
             startupCard.Controls.Add(startupToggle);
@@ -231,7 +273,7 @@ namespace Raudo
                 "Cerrar la ventana mantiene Raudo disponible junto al reloj.",
                 8.25F,
                 FontStyle.Regular,
-                new Point(30, 608),
+                new Point(30, 654),
                 new Size(370, 24));
             Controls.Add(trayHintLabel);
 
@@ -239,7 +281,7 @@ namespace Raudo
                 "v" + Assembly.GetExecutingAssembly().GetName().Version.ToString(3),
                 8.25F,
                 FontStyle.Regular,
-                new Point(432, 608),
+                new Point(432, 654),
                 new Size(78, 24));
             versionLabel.TextAlign = ContentAlignment.MiddleRight;
             Controls.Add(versionLabel);
@@ -251,6 +293,7 @@ namespace Raudo
             toolTip = new ToolTip();
             toolTip.SetToolTip(updateLink, "Consulta manualmente la última versión publicada en GitHub");
             toolTip.SetToolTip(startupToggle, "Inicia Raudo en la bandeja, siempre apagado");
+            toolTip.SetToolTip(miniToggle, "Muestra una burbuja para navegar entre escritorios");
 
             FormClosing += MainFormClosing;
             Resize += MainFormResize;
@@ -259,6 +302,7 @@ namespace Raudo
 
             SelectDuration(settings.DurationMinutes);
             SetStartupChecked(StartupManager.IsEnabled());
+            SetMiniModeChecked(settings.MiniModeEnabled);
             ApplyTheme(ThemeService.Current());
             RefreshState();
         }
@@ -267,6 +311,7 @@ namespace Raudo
         public event EventHandler<DurationChangedEventArgs> DurationChanged;
         public event EventHandler ScreenCaptureRequested;
         public event EventHandler<StartupChangedEventArgs> StartupChanged;
+        public event EventHandler<MiniModeChangedEventArgs> MiniModeChanged;
 
         public void SelectDuration(int minutes)
         {
@@ -278,6 +323,13 @@ namespace Raudo
             suppressStartupChange = true;
             startupToggle.Checked = enabled;
             suppressStartupChange = false;
+        }
+
+        public void SetMiniModeChecked(bool enabled)
+        {
+            suppressMiniModeChange = true;
+            miniToggle.Checked = enabled;
+            suppressMiniModeChange = false;
         }
 
         public void ApplyTheme(ThemePalette currentPalette)
@@ -308,12 +360,16 @@ namespace Raudo
             captureDescriptionLabel.ForeColor = palette.TextMuted;
             startupTitleLabel.ForeColor = palette.Text;
             startupDescriptionLabel.ForeColor = palette.TextMuted;
+            miniTitleLabel.ForeColor = palette.Text;
+            miniDescriptionLabel.ForeColor = palette.TextMuted;
+            preferencesDivider.BackColor = palette.Border;
 
             durationSelector.ForeColor = palette.Text;
             durationSelector.ApplyTheme(palette);
             brandMark.ApplyTheme(palette);
             captureGlyph.ApplyTheme(palette);
             startupToggle.ApplyTheme(palette);
+            miniToggle.ApplyTheme(palette);
 
             captureButton.NormalColor = palette.Primary;
             captureButton.HoverColor = palette.PrimaryHover;
@@ -471,6 +527,20 @@ namespace Raudo
             if (handler != null)
             {
                 handler(this, new StartupChangedEventArgs(startupToggle.Checked));
+            }
+        }
+
+        private void MiniToggleCheckedChanged(object sender, EventArgs eventArgs)
+        {
+            if (suppressMiniModeChange)
+            {
+                return;
+            }
+
+            EventHandler<MiniModeChangedEventArgs> handler = MiniModeChanged;
+            if (handler != null)
+            {
+                handler(this, new MiniModeChangedEventArgs(miniToggle.Checked));
             }
         }
 

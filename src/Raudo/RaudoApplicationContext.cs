@@ -17,11 +17,15 @@ namespace Raudo
         private readonly ToolStripMenuItem toggleItem;
         private readonly ToolStripMenuItem durationMenu;
         private readonly ToolStripMenuItem startupItem;
+        private readonly ToolStripMenuItem miniModeItem;
         private readonly Icon idleIcon;
         private readonly Icon activeIcon;
         private readonly Control dispatcher;
         private readonly RegisteredWaitHandle showRequestRegistration;
         private readonly MainForm form;
+        private readonly VirtualDesktopService virtualDesktopService;
+
+        private MiniForm miniForm;
 
         private bool exiting;
 
@@ -33,12 +37,14 @@ namespace Raudo
             activeIcon = IconFactory.Create(true);
             keepActiveService = new KeepActiveService();
             keepActiveService.StateChanged += KeepActiveServiceStateChanged;
+            virtualDesktopService = new VirtualDesktopService();
 
             form = new MainForm(keepActiveService, settings, idleIcon);
             form.ToggleRequested += ToggleRequested;
             form.DurationChanged += DurationChanged;
             form.ScreenCaptureRequested += ScreenCaptureRequested;
             form.StartupChanged += StartupChanged;
+            form.MiniModeChanged += MiniModeChanged;
 
             trayMenu = new ContextMenuStrip();
             trayMenu.Font = new Font("Segoe UI", 9.5F, FontStyle.Regular, GraphicsUnit.Point);
@@ -65,6 +71,13 @@ namespace Raudo
             captureItem.ShortcutKeyDisplayString = "Win + Shift + S";
             captureItem.Click += ScreenCaptureRequested;
             trayMenu.Items.Add(captureItem);
+
+            miniModeItem = new ToolStripMenuItem("Modo Mini");
+            miniModeItem.CheckOnClick = true;
+            miniModeItem.Checked = settings.MiniModeEnabled;
+            miniModeItem.Enabled = virtualDesktopService.IsAvailable;
+            miniModeItem.Click += MiniModeMenuItemClick;
+            trayMenu.Items.Add(miniModeItem);
 
             ToolStripMenuItem openItem = new ToolStripMenuItem("Abrir Raudo");
             openItem.Click += delegate { ShowWindow(); };
@@ -100,8 +113,14 @@ namespace Raudo
             SystemEvents.SessionSwitch += SystemSessionSwitch;
             SystemEvents.PowerModeChanged += SystemPowerModeChanged;
             SystemEvents.UserPreferenceChanged += SystemUserPreferenceChanged;
+            SystemEvents.DisplaySettingsChanged += SystemDisplaySettingsChanged;
 
             UpdatePresentation();
+            if (settings.MiniModeEnabled && virtualDesktopService.IsAvailable)
+            {
+                EnsureMiniForm();
+            }
+
             if (showWindowAtStartup)
             {
                 ShowWindow();
@@ -176,6 +195,16 @@ namespace Raudo
             SetStartup(startupItem.Checked);
         }
 
+        private void MiniModeChanged(object sender, MiniModeChangedEventArgs eventArgs)
+        {
+            SetMiniMode(eventArgs.Enabled, true);
+        }
+
+        private void MiniModeMenuItemClick(object sender, EventArgs eventArgs)
+        {
+            SetMiniMode(miniModeItem.Checked, true);
+        }
+
         private void SetStartup(bool enabled)
         {
             try
@@ -195,6 +224,42 @@ namespace Raudo
                     "Raudo",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
+            }
+        }
+
+        private void SetMiniMode(bool enabled, bool offerPinHelp)
+        {
+            if (enabled && !virtualDesktopService.IsAvailable)
+            {
+                enabled = false;
+                MessageBox.Show(
+                    form,
+                    "El Modo Mini requiere Windows 10 o posterior.",
+                    "Raudo",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+            }
+
+            settings.MiniModeEnabled = enabled;
+            miniModeItem.Checked = enabled;
+            form.SetMiniModeChecked(enabled);
+
+            if (enabled)
+            {
+                EnsureMiniForm();
+            }
+            else
+            {
+                DestroyMiniForm();
+            }
+
+            SaveSettings();
+
+            if (enabled && offerPinHelp && !settings.MiniHintShown)
+            {
+                settings.MiniHintShown = true;
+                SaveSettings();
+                ShowMiniPinHelp();
             }
         }
 
@@ -225,6 +290,7 @@ namespace Raudo
 
         private void TrayMenuOpening(object sender, System.ComponentModel.CancelEventArgs eventArgs)
         {
+            miniModeItem.Checked = settings.MiniModeEnabled;
             UpdatePresentation();
         }
 
@@ -268,8 +334,27 @@ namespace Raudo
             if (eventArgs.Category == UserPreferenceCategory.General
                 || eventArgs.Category == UserPreferenceCategory.VisualStyle)
             {
-                RunOnUiThread(delegate { form.ApplyTheme(ThemeService.Current()); });
+                RunOnUiThread(delegate
+                {
+                    ThemePalette current = ThemeService.Current();
+                    form.ApplyTheme(current);
+                    if (miniForm != null)
+                    {
+                        miniForm.ApplyTheme(current);
+                    }
+                });
             }
+        }
+
+        private void SystemDisplaySettingsChanged(object sender, EventArgs eventArgs)
+        {
+            RunOnUiThread(delegate
+            {
+                if (miniForm != null)
+                {
+                    miniForm.EnsureVisibleOnScreen();
+                }
+            });
         }
 
         private void RunOnUiThread(MethodInvoker action)
@@ -333,6 +418,81 @@ namespace Raudo
             }
 
             form.RefreshState();
+            if (miniForm != null)
+            {
+                miniForm.SetActive(active);
+            }
+        }
+
+        private void EnsureMiniForm()
+        {
+            if (miniForm == null || miniForm.IsDisposed)
+            {
+                miniForm = new MiniForm(virtualDesktopService, settings);
+                miniForm.OpenMainRequested += MiniOpenMainRequested;
+                miniForm.HideRequested += MiniHideRequested;
+                miniForm.PinHelpRequested += MiniPinHelpRequested;
+                miniForm.PositionChangedByUser += MiniPositionChangedByUser;
+                miniForm.ApplyTheme(ThemeService.Current());
+                miniForm.SetActive(keepActiveService.IsActive);
+            }
+
+            miniForm.ShowMini();
+        }
+
+        private void DestroyMiniForm()
+        {
+            if (miniForm == null)
+            {
+                return;
+            }
+
+            miniForm.OpenMainRequested -= MiniOpenMainRequested;
+            miniForm.HideRequested -= MiniHideRequested;
+            miniForm.PinHelpRequested -= MiniPinHelpRequested;
+            miniForm.PositionChangedByUser -= MiniPositionChangedByUser;
+            miniForm.AllowCloseAndClose();
+            miniForm.Dispose();
+            miniForm = null;
+        }
+
+        private void MiniOpenMainRequested(object sender, EventArgs eventArgs)
+        {
+            ShowWindow();
+        }
+
+        private void MiniHideRequested(object sender, EventArgs eventArgs)
+        {
+            RunOnUiThread(delegate { SetMiniMode(false, false); });
+        }
+
+        private void MiniPinHelpRequested(object sender, EventArgs eventArgs)
+        {
+            ShowMiniPinHelp();
+        }
+
+        private void MiniPositionChangedByUser(
+            object sender,
+            MiniPositionChangedEventArgs eventArgs)
+        {
+            settings.MiniCenterX = eventArgs.Center.X;
+            settings.MiniCenterY = eventArgs.Center.Y;
+            SaveSettings();
+        }
+
+        private void ShowMiniPinHelp()
+        {
+            IWin32Window owner = miniForm == null ? (IWin32Window)form : miniForm;
+            MessageBox.Show(
+                owner,
+                "Para mantener la burbuja en todos los escritorios:\n\n"
+                    + "1. Presiona Win + Tab.\n"
+                    + "2. Haz clic derecho sobre Raudo Mini.\n"
+                    + "3. Elige Mostrar esta ventana en todos los escritorios.\n\n"
+                    + "Windows conservará el control de esta configuración.",
+                "Modo Mini",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
         }
 
         private static string FormatRemaining(TimeSpan remaining)
@@ -361,8 +521,11 @@ namespace Raudo
             SystemEvents.SessionSwitch -= SystemSessionSwitch;
             SystemEvents.PowerModeChanged -= SystemPowerModeChanged;
             SystemEvents.UserPreferenceChanged -= SystemUserPreferenceChanged;
+            SystemEvents.DisplaySettingsChanged -= SystemDisplaySettingsChanged;
             notifyIcon.Visible = false;
             keepActiveService.Dispose();
+            DestroyMiniForm();
+            virtualDesktopService.Dispose();
             form.AllowCloseAndClose();
             showRequestRegistration.Unregister(null);
             dispatcher.Dispose();

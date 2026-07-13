@@ -150,6 +150,9 @@ namespace Raudo
         {
             [FieldOffset(0)]
             public MouseInput Mouse;
+
+            [FieldOffset(0)]
+            public KeyboardInput Keyboard;
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -158,6 +161,16 @@ namespace Raudo
             public int Dx;
             public int Dy;
             public uint MouseData;
+            public uint Flags;
+            public uint Time;
+            public UIntPtr ExtraInfo;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct KeyboardInput
+        {
+            public ushort VirtualKey;
+            public ushort ScanCode;
             public uint Flags;
             public uint Time;
             public UIntPtr ExtraInfo;

@@ -17,5 +17,6 @@ cd raudo-windows
 - No añadas telemetría, ejecución arbitraria, listeners de red ni descargas automáticas.
 - Añade o actualiza pruebas cuando cambie el comportamiento.
 - Ejecuta las pruebas de integración si modificas entrada, energía, sesión o APIs nativas.
+- Ejecuta `Raudo.Tests.exe --desktop-integration` si modificas escritorios virtuales; la prueba requiere al menos dos escritorios y restaura el escritorio original.
 
 Las propuestas se envían mediante pull request e incluyen su motivación, impacto y validación.

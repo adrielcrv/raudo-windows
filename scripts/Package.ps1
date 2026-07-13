@@ -39,6 +39,7 @@ New-Item -ItemType Directory -Path $stagingPath -Force | Out-Null
 Copy-Item -LiteralPath $sourceExe -Destination (Join-Path $stagingPath 'Raudo.exe')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'packaging\README.txt') -Destination (Join-Path $stagingPath 'README.txt')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE') -Destination (Join-Path $stagingPath 'LICENSE.txt')
+Copy-Item -LiteralPath (Join-Path $projectRoot 'THIRD_PARTY_NOTICES.md') -Destination (Join-Path $stagingPath 'THIRD-PARTY-NOTICES.txt')
 
 $exeHash = Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $stagingPath 'Raudo.exe')
 Set-Content -LiteralPath (Join-Path $stagingPath 'SHA256SUMS.txt') -Encoding ascii -Value (
