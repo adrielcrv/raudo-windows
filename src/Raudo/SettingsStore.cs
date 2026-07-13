@@ -11,15 +11,27 @@ namespace Raudo
         public RaudoSettings()
         {
             DurationMinutes = 30;
+            MiniCenterX = -1;
+            MiniCenterY = -1;
         }
 
         public int DurationMinutes { get; set; }
+        public bool MiniModeEnabled { get; set; }
+        public bool MiniHintShown { get; set; }
+        public int MiniCenterX { get; set; }
+        public int MiniCenterY { get; set; }
 
         public void Normalize()
         {
             if (!DurationOption.IsSupported(DurationMinutes))
             {
                 DurationMinutes = 30;
+            }
+
+            if (MiniCenterX < -1 || MiniCenterY < -1)
+            {
+                MiniCenterX = -1;
+                MiniCenterY = -1;
             }
         }
     }

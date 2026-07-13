@@ -2,6 +2,13 @@
 
 Este proyecto utiliza versionado semántico.
 
+## [Sin publicar]
+
+- Modo Mini con navegación visual entre escritorios virtuales.
+- Selector bajo demanda para traer ventanas al escritorio actual.
+- Posición persistente, soporte multimonitor y degradación segura por versión de Windows.
+- Prueba de integración cruzada para ventanas pertenecientes a otro proceso.
+
 ## [1.0.0] - 2026-07-13
 
 - Nueva identidad visual y nombre Raudo.

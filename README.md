@@ -28,6 +28,22 @@ Raudo reúne utilidades locales y ligeras para Windows en una aplicación de ban
 
 Abre la Herramienta Recortes mediante el protocolo `ms-screenclip` incluido en Windows. Raudo no captura ni lee el contenido del portapapeles.
 
+### Modo Mini
+
+- Muestra una burbuja compacta, movible y siempre encima.
+- Expone controles para cambiar al escritorio virtual izquierdo o derecho.
+- Consulta las ventanas de otros escritorios únicamente al abrir el selector.
+- Permite traer una ventana elegida al escritorio actual sin cerrarla.
+- Recuerda su posición y puede ocultarse desde la propia burbuja o la bandeja.
+
+<p align="center">
+  <img src="docs/raudo-mini-dark.png" width="172" alt="Modo Mini de Raudo">
+</p>
+
+Para conservar la burbuja en todos los escritorios, abre `Win + Tab`, haz clic derecho sobre **Raudo Mini** y selecciona **Mostrar esta ventana en todos los escritorios**. Raudo delega este anclaje a Windows para evitar modificar la configuración del sistema mediante interfaces privadas.
+
+La detección de ventanas utiliza la interfaz pública `IVirtualDesktopManager`. Windows restringe el movimiento de ventanas pertenecientes a otros procesos; esa operación emplea una capa de compatibilidad limitada por versión y se desactiva de forma segura si una actualización de Windows cambia el contrato interno. Raudo no instala controladores, servicios ni procesos auxiliares.
+
 ## Privacidad y red
 
 Raudo no incluye telemetría, cuentas ni publicidad. Sólo se conecta a Internet cuando el usuario selecciona **Buscar actualizaciones**. Esa acción consulta la publicación oficial de GitHub y nunca descarga ni ejecuta archivos automáticamente.
@@ -57,6 +73,13 @@ Ejecutar también las pruebas de integración con las API de Windows:
 .\scripts\Build.ps1 -Test -IntegrationTest
 ```
 
+Validar manualmente el movimiento entre dos escritorios virtuales:
+
+```powershell
+.\scripts\Build.ps1 -Test
+.\artifacts\Raudo.Tests.exe --desktop-integration
+```
+
 Generar el ZIP portable y sus hashes:
 
 ```powershell
@@ -75,4 +98,4 @@ Los reportes de vulnerabilidades deben enviarse de forma privada siguiendo [SECU
 
 ## Licencia
 
-[MIT](LICENSE)
+[MIT](LICENSE). Consulta también [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

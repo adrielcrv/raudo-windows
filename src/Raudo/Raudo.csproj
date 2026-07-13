@@ -44,6 +44,7 @@
     <Compile Include="Controls.cs" />
     <Compile Include="KeepActiveService.cs" />
     <Compile Include="MainForm.cs" />
+    <Compile Include="MiniForm.cs" />
     <Compile Include="Platform.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
@@ -51,6 +52,7 @@
     <Compile Include="SettingsStore.cs" />
     <Compile Include="Theme.cs" />
     <Compile Include="UpdateService.cs" />
+    <Compile Include="VirtualDesktopService.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="app.manifest" />
