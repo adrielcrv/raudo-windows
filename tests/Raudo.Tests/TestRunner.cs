@@ -139,12 +139,46 @@ internal static class TestRunner
             }
 
             if (args.Length == 1
+                && args[0].StartsWith("--capture-salto-media-dark=", StringComparison.Ordinal))
+            {
+                CaptureSalto(
+                    args[0].Substring("--capture-salto-media-dark=".Length),
+                    true,
+                    "media");
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
+                && args[0].StartsWith("--capture-salto-media-light=", StringComparison.Ordinal))
+            {
+                CaptureSalto(
+                    args[0].Substring("--capture-salto-media-light=".Length),
+                    false,
+                    "media");
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
                 && args[0].StartsWith("--capture-salto-calculation-dark-150=", StringComparison.Ordinal))
             {
                 CaptureSaltoScaled(
                     args[0].Substring("--capture-salto-calculation-dark-150=".Length),
                     true,
                     "12.5 * 8",
+                    1.5F);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
+                && args[0].StartsWith("--capture-salto-media-dark-150=", StringComparison.Ordinal))
+            {
+                CaptureSaltoScaled(
+                    args[0].Substring("--capture-salto-media-dark-150=".Length),
+                    true,
+                    "media",
                     1.5F);
                 Console.WriteLine("PASS");
                 return 0;
@@ -606,9 +640,15 @@ internal static class TestRunner
             execute();
             return null;
         });
+        MediaControlService mediaControls = new MediaControlService(
+            delegate(NativeMethods.Input[] inputs)
+            {
+                execute();
+                return (uint)inputs.Length;
+            });
         return new RaudoActionCatalog(delegate
         {
-            return new List<RaudoAction>
+            List<RaudoAction> actions = new List<RaudoAction>
             {
                 new RaudoAction(
                     "pulse.toggle",
@@ -688,6 +728,13 @@ internal static class TestRunner
                         return null;
                     })
             };
+            foreach (RaudoAction mediaAction in MediaControlCatalog.CreateActions(
+                mediaControls))
+            {
+                actions.Add(mediaAction);
+            }
+
+            return actions;
         }, quickResults.CreateActions);
     }
 
@@ -988,9 +1035,61 @@ internal static class TestRunner
             highContrast.PrimaryForeground == SystemColors.HighlightText,
             "Alto contraste debe respetar el texto de selección del sistema.");
 
+        MediaCommand[] mediaCommands =
+        {
+            MediaCommand.TogglePlayPause,
+            MediaCommand.PreviousTrack,
+            MediaCommand.NextTrack,
+            MediaCommand.ToggleMute,
+            MediaCommand.VolumeDown,
+            MediaCommand.VolumeUp
+        };
+        ushort[] expectedMediaKeys = { 0xB3, 0xB1, 0xB0, 0xAD, 0xAE, 0xAF };
+        for (int mediaIndex = 0; mediaIndex < mediaCommands.Length; mediaIndex++)
+        {
+            MediaCommand command = mediaCommands[mediaIndex];
+            Assert(
+                MediaControlService.GetVirtualKey(command) == expectedMediaKeys[mediaIndex],
+                "Un control multimedia no usa el código virtual documentado.");
+            NativeMethods.Input[] mediaInputs = MediaControlService.CreateInputs(command);
+            Assert(mediaInputs.Length == 2, "Un control multimedia no generó dos eventos.");
+            Assert(
+                mediaInputs[0].Type == 1
+                    && mediaInputs[1].Type == 1
+                    && mediaInputs[0].Union.Keyboard.VirtualKey == expectedMediaKeys[mediaIndex]
+                    && mediaInputs[1].Union.Keyboard.VirtualKey == expectedMediaKeys[mediaIndex],
+                "Un control multimedia generó una entrada de teclado inesperada.");
+            Assert(
+                mediaInputs[0].Union.Keyboard.Flags == 0
+                    && mediaInputs[1].Union.Keyboard.Flags == 0x0002,
+                "Un control multimedia no conservó la secuencia presionar-soltar.");
+        }
+
+        int sentMediaInputCount = 0;
+        MediaControlService testMediaService = new MediaControlService(
+            delegate(NativeMethods.Input[] inputs)
+            {
+                sentMediaInputCount = inputs.Length;
+                return (uint)inputs.Length;
+            });
+        Assert(
+            string.IsNullOrWhiteSpace(
+                testMediaService.TryExecute(MediaCommand.TogglePlayPause))
+                && sentMediaInputCount == 2,
+            "El servicio multimedia no confirmó un envío completo.");
+        MediaControlService partialMediaService = new MediaControlService(
+            delegate { return 1; });
+        Assert(
+            !string.IsNullOrWhiteSpace(
+                partialMediaService.TryExecute(MediaCommand.NextTrack)),
+            "El servicio multimedia ocultó un envío parcial.");
+        IList<MediaControlDefinition> mediaDefinitions =
+            MediaControlCatalog.GetDefinitions();
+        Assert(mediaDefinitions.Count == 6, "El catálogo multimedia no está acotado.");
+
         RaudoActionCatalog actionCatalog = CreateTestActionCatalog(null);
         actionCatalog.Refresh();
-        Assert(actionCatalog.Count == 7, "El catálogo no cargó todos los resultados.");
+        Assert(actionCatalog.Count == 13, "El catálogo no cargó todos los resultados.");
         Assert(
             actionCatalog.Search(string.Empty).Count == 4,
             "La consulta vacía mostró resultados dinámicos.");
@@ -1009,6 +1108,15 @@ internal static class TestRunner
         Assert(
             actionCatalog.Search("sin coincidencia").Count == 0,
             "Una búsqueda desconocida devolvió acciones.");
+        IList<RaudoAction> mediaMatches = actionCatalog.Search("media");
+        Assert(mediaMatches.Count == 6, "Salto no encontró los seis controles multimedia.");
+        foreach (RaudoAction mediaMatch in mediaMatches)
+        {
+            Assert(
+                mediaMatch.Kind == RaudoActionKind.Media
+                    && !mediaMatch.ShowWhenQueryEmpty,
+                "Un control multimedia alteró la vista inicial de Salto.");
+        }
 
         decimal arithmeticResult;
         Assert(
@@ -1171,6 +1279,10 @@ internal static class TestRunner
         executableCatalog.Refresh();
         executableCatalog.Search("pulso")[0].Execute();
         Assert(actionInvocationCount == 1, "El catálogo no ejecutó la acción seleccionada.");
+        executableCatalog.Search("reproducir")[0].Execute();
+        Assert(
+            actionInvocationCount == 2,
+            "El catálogo no ejecutó el control multimedia seleccionado.");
 
         InstalledApplicationCatalog installedCatalog =
             new InstalledApplicationCatalog(delegate
@@ -1220,6 +1332,14 @@ internal static class TestRunner
             Assert(
                 salto.KeyboardHintForTesting.EndsWith("copiar", StringComparison.Ordinal),
                 "La ayuda de teclado no describió la copia del resultado.");
+            salto.SetQueryForTesting("media");
+            Assert(
+                salto.ResultCountForTesting == 6
+                    && salto.SelectedActionIdForTesting == "media.play-pause",
+                "Salto no presentó los controles multimedia esperados.");
+            Assert(
+                salto.KeyboardHintForTesting.EndsWith("controlar", StringComparison.Ordinal),
+                "La ayuda de teclado no describió el control multimedia.");
             AssertAccessibleControls(salto);
             ScaleToTargetDpi(salto, 144);
             AssertControlsWithinParent(salto);
