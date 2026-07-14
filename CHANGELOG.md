@@ -4,6 +4,15 @@ Este proyecto utiliza versionado semántico.
 
 ## [Sin publicar]
 
+## [1.5.0] - 2026-07-13
+
+- Seis controles multimedia fijos para reproducir o pausar, cambiar de pista, silenciar y ajustar el volumen de Windows.
+- Acceso desde el submenú Multimedia de la bandeja y mediante búsquedas en Salto, sin ampliar su vista inicial.
+- Comandos explícitos mediante las teclas multimedia documentadas de Windows, sin interpretar la consulta como una entrada arbitraria.
+- Iconos vectoriales diferenciados y ayuda contextual para las acciones multimedia.
+- Sin lectura de sesiones, reproductores, títulos, contenido o carátulas; tampoco se agregan sondeo, historial, temporizadores ni conexiones de red.
+- Validación ampliada para el mapeo de comandos, temas, alto contraste, escalado y consumo de recursos.
+
 ## [1.4.0] - 2026-07-13
 
 - Salto calcula expresiones aritméticas acotadas y convierte unidades comunes de longitud, masa, temperatura, tiempo y almacenamiento sin conexión.

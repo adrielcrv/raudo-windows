@@ -6,7 +6,8 @@ USO
 
 1. Ejecuta Raudo.exe.
 2. Presiona Ctrl + Alt + Espacio para abrir Salto y buscar una ventana,
-   aplicación, carpeta conocida o acción, o realizar un cálculo local.
+   aplicación, carpeta conocida o acción, realizar un cálculo local o usar un
+   control multimedia.
 3. Elige una duración e inicia Pulso cuando lo necesites.
 4. Cierra la ventana para conservar Raudo junto al reloj.
 5. Activa Modo Mini para navegar entre escritorios y traer ventanas.
@@ -22,6 +23,14 @@ escritorio. El catálogo de aplicaciones se prepara una vez por sesión y bajo
 demanda. Raudo no recorre el disco ni conserva las consultas. Un resultado sólo
 se copia después de seleccionarlo. Si Ctrl + Alt + Espacio ya pertenece a otra
 aplicación, Salto permanece disponible desde la bandeja.
+
+MULTIMEDIA
+
+Raudo ofrece reproducir o pausar, pista anterior, pista siguiente, silenciar,
+bajar volumen y subir volumen desde Salto o el submenú Multimedia de la
+bandeja. Los comandos utilizan las teclas multimedia estándar de Windows; la
+aplicación que responde decide cómo aplicarlos. Raudo no inspecciona sesiones,
+reproductores, títulos ni contenido.
 
 MODO MINI
 

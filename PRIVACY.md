@@ -32,6 +32,12 @@ Los cálculos y conversiones se procesan localmente. Raudo sólo escribe el resu
 
 Raudo no lee el contenido de las ventanas, no recorre ni indexa archivos, no conserva el texto de búsqueda y no envía estos datos por la red. El catálogo de aplicaciones se prepara bajo demanda como máximo una vez por proceso. Las carpetas remotas y rutas de red no se consultan ni se muestran como accesos directos.
 
+## Controles multimedia
+
+Las acciones multimedia envían únicamente uno de seis comandos fijos de reproducción o volumen documentados por Windows después de una selección explícita. El texto de búsqueda no puede convertirse en una tecla o comando arbitrario.
+
+Raudo no consulta qué aplicación responde, ni lee sesiones multimedia, títulos, contenido, progreso, carátulas o historial. Estas acciones no mantienen sondeo, suscripciones, temporizadores ni conexiones de red.
+
 ## Conexiones de red
 
 Raudo no realiza conexiones automáticas. Al seleccionar **Buscar actualizaciones**, envía una solicitud HTTPS a la API pública de GitHub para consultar la última publicación de `adrielcrv/raudo-windows`.
