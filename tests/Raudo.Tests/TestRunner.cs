@@ -665,7 +665,7 @@ internal static class TestRunner
                 salto.SelectedActionIdForTesting == "capture.screen",
                 "Salto no seleccionó el primer resultado.");
             AssertAccessibleControls(salto);
-            salto.Scale(new SizeF(1.5F, 1.5F));
+            ScaleToTargetDpi(salto, 144);
             AssertControlsWithinParent(salto);
             salto.AllowCloseAndClose();
         }
@@ -679,7 +679,7 @@ internal static class TestRunner
         {
             mainForm.ApplyTheme(highContrast);
             AssertAccessibleControls(mainForm);
-            mainForm.Scale(new SizeF(1.5F, 1.5F));
+            ScaleToTargetDpi(mainForm, 144);
             AssertControlsWithinParent(mainForm);
             mainForm.AllowCloseAndClose();
         }
@@ -1317,16 +1317,35 @@ internal static class TestRunner
 
     private static void AssertControlsWithinParent(Control parent)
     {
+        Rectangle available = parent.DisplayRectangle;
         foreach (Control child in parent.Controls)
         {
             Assert(
-                child.Left >= 0
-                    && child.Top >= 0
-                    && child.Right <= parent.ClientSize.Width
-                    && child.Bottom <= parent.ClientSize.Height,
+                child.Left >= available.Left
+                    && child.Top >= available.Top
+                    && child.Right <= available.Right
+                    && child.Bottom <= available.Bottom,
                 "Un control salió de su superficie a escala ampliada: "
-                    + child.GetType().Name);
+                    + child.GetType().Name
+                    + ". Control="
+                    + child.Bounds
+                    + ", superficie="
+                    + available
+                    + ", DPI="
+                    + parent.DeviceDpi);
             AssertControlsWithinParent(child);
         }
+    }
+
+    private static void ScaleToTargetDpi(Control control, int targetDpi)
+    {
+        int currentDpi = Math.Max(96, control.DeviceDpi);
+        float factor = targetDpi / (float)currentDpi;
+        if (Math.Abs(factor - 1F) > 0.001F)
+        {
+            control.Scale(new SizeF(factor, factor));
+        }
+
+        control.PerformLayout();
     }
 }
