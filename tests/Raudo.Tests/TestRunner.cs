@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.IO.Compression;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
@@ -56,6 +57,24 @@ internal static class TestRunner
                     args[0].Substring("--capture-mini-edge-dark=".Length),
                     true,
                     false);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1 && args[0].StartsWith("--capture-mini-motion-dark=", StringComparison.Ordinal))
+            {
+                CaptureMiniMotion(
+                    args[0].Substring("--capture-mini-motion-dark=".Length),
+                    true);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1 && args[0].StartsWith("--capture-mini-states-dark=", StringComparison.Ordinal))
+            {
+                CaptureMiniStates(
+                    args[0].Substring("--capture-mini-states-dark=".Length),
+                    true);
                 Console.WriteLine("PASS");
                 return 0;
             }
@@ -162,6 +181,110 @@ internal static class TestRunner
         }
     }
 
+    private static void CaptureMiniMotion(string path, bool dark)
+    {
+        Application.EnableVisualStyles();
+        Application.SetCompatibleTextRenderingDefault(false);
+        double[] progressValues = { 0D, 0.33D, 0.66D, 1D };
+        const int panelWidth = 160;
+        const int panelGap = 12;
+        using (VirtualDesktopService service = new VirtualDesktopService())
+        using (Bitmap strip = new Bitmap(
+            (panelWidth * progressValues.Length) + (panelGap * (progressValues.Length - 1)),
+            64))
+        using (Graphics stripGraphics = Graphics.FromImage(strip))
+        {
+            stripGraphics.Clear(dark ? Color.FromArgb(15, 23, 42) : Color.FromArgb(246, 248, 252));
+            for (int index = 0; index < progressValues.Length; index++)
+            {
+                using (MiniForm form = new MiniForm(service, new RaudoSettings()))
+                {
+                    form.ShowMini();
+                    form.ApplyTheme(ThemePalette.Create(dark));
+                    form.SetNavigationAvailabilityForTesting(true, true);
+                    form.SetRevealProgressForTesting(progressValues[index]);
+                    Application.DoEvents();
+                    using (Bitmap frame = new Bitmap(form.ClientSize.Width, form.ClientSize.Height))
+                    {
+                        form.DrawToBitmap(frame, new Rectangle(Point.Empty, form.ClientSize));
+                        int panelLeft = index * (panelWidth + panelGap);
+                        stripGraphics.DrawImageUnscaled(
+                            frame,
+                            panelLeft + panelWidth - frame.Width,
+                            (strip.Height - frame.Height) / 2);
+                    }
+
+                    form.AllowCloseAndClose();
+                }
+            }
+
+            strip.Save(path, ImageFormat.Png);
+        }
+    }
+
+    private static void CaptureMiniStates(string path, bool dark)
+    {
+        Application.EnableVisualStyles();
+        Application.SetCompatibleTextRenderingDefault(false);
+        KeepActivePhase[] phases =
+        {
+            KeepActivePhase.Inactive,
+            KeepActivePhase.Active,
+            KeepActivePhase.EndingSoon,
+            KeepActivePhase.Critical,
+            KeepActivePhase.Completed
+        };
+        const int panelWidth = 160;
+        const int panelGap = 12;
+        using (VirtualDesktopService service = new VirtualDesktopService())
+        using (Bitmap strip = new Bitmap(
+            (panelWidth * phases.Length) + (panelGap * (phases.Length - 1)),
+            76))
+        using (Graphics stripGraphics = Graphics.FromImage(strip))
+        using (Font captionFont = new Font("Segoe UI", 8F, FontStyle.Regular, GraphicsUnit.Point))
+        {
+            Color canvas = dark ? Color.FromArgb(15, 23, 42) : Color.FromArgb(246, 248, 252);
+            Color text = dark ? Color.FromArgb(203, 213, 225) : Color.FromArgb(51, 65, 85);
+            stripGraphics.Clear(canvas);
+            for (int index = 0; index < phases.Length; index++)
+            {
+                using (MiniForm form = new MiniForm(service, new RaudoSettings()))
+                {
+                    form.ShowMini();
+                    form.ApplyTheme(ThemePalette.Create(dark));
+                    form.SetSessionPhase(phases[index]);
+                    form.SetNavigationAvailabilityForTesting(true, true);
+                    form.SetExpandedForTesting(true);
+                    Application.DoEvents();
+                    using (Bitmap frame = new Bitmap(form.ClientSize.Width, form.ClientSize.Height))
+                    {
+                        form.DrawToBitmap(frame, new Rectangle(Point.Empty, form.ClientSize));
+                        int panelLeft = index * (panelWidth + panelGap);
+                        stripGraphics.DrawImageUnscaled(
+                            frame,
+                            panelLeft + ((panelWidth - frame.Width) / 2),
+                            2);
+                        using (StringFormat format = new StringFormat())
+                        using (SolidBrush brush = new SolidBrush(text))
+                        {
+                            format.Alignment = StringAlignment.Center;
+                            stripGraphics.DrawString(
+                                phases[index].ToString(),
+                                captionFont,
+                                brush,
+                                new RectangleF(panelLeft, 54, panelWidth, 20),
+                                format);
+                        }
+                    }
+
+                    form.AllowCloseAndClose();
+                }
+            }
+
+            strip.Save(path, ImageFormat.Png);
+        }
+    }
+
     private static void RunUnitTests()
     {
         Assert(DurationOption.IsSupported(15), "15 minutos debe ser válido.");
@@ -210,18 +333,203 @@ internal static class TestRunner
         using (MiniForm mini = new MiniForm(desktopService, new RaudoSettings()))
         {
             Assert(
-                mini.ClientSize == new Size(18, 44),
-                "La pestaña recogida no tiene el tamaño esperado.");
+                mini.ClientSize == new Size(20, 48),
+                "El control de borde no tiene el tamaño esperado.");
+            Assert(
+                !mini.IsAnimationRunningForTesting,
+                "El temporizador de movimiento no debe ejecutarse en reposo.");
             mini.SetExpandedForTesting(true);
             mini.SetNavigationAvailabilityForTesting(true, true);
-            Assert(mini.ClientSize.Width == 156, "No se mostraron ambas direcciones.");
+            Assert(mini.ClientSize.Width == 144, "No se mostraron ambas direcciones.");
             mini.SetNavigationAvailabilityForTesting(true, false);
-            Assert(mini.ClientSize.Width == 104, "No se ocultó la dirección derecha.");
+            Assert(mini.ClientSize.Width == 96, "No se ocultó la dirección derecha.");
             mini.SetNavigationAvailabilityForTesting(false, true);
-            Assert(mini.ClientSize.Width == 104, "No se ocultó la dirección izquierda.");
+            Assert(mini.ClientSize.Width == 96, "No se ocultó la dirección izquierda.");
             mini.SetNavigationAvailabilityForTesting(false, false);
-            Assert(mini.ClientSize.Width == 52, "El control sin direcciones no se compactó.");
+            Assert(mini.ClientSize.Width == 48, "El control sin direcciones no se compactó.");
+            mini.SetExpandedForTesting(false);
+            Assert(
+                mini.ClientSize == new Size(20, 48),
+                "El control no regresó al estado de borde.");
+            mini.SetNavigationAvailabilityForTesting(true, true);
+            mini.SetRevealProgressForTesting(0.5D);
+            Assert(
+                mini.ClientSize == new Size(82, 48),
+                "La geometría intermedia de la transición no es estable.");
+            mini.SetRevealProgressForTesting(0D);
+            mini.SetNotificationStateForTesting(UserNotificationState.AcceptsNotifications);
+            Assert(
+                Math.Abs(mini.WindowOpacityForTesting - 0.82D) < 0.01D,
+                "La presencia normal de Mini no conserva la opacidad esperada.");
+            mini.SetNotificationStateForTesting(UserNotificationState.RunningDirect3DFullScreen);
+            Assert(
+                Math.Abs(mini.WindowOpacityForTesting - 0.38D) < 0.01D,
+                "Mini no reduce su presencia durante pantalla completa.");
             mini.AllowCloseAndClose();
+        }
+
+        Assert(
+            MiniMotion.CollapseDelayMilliseconds == 1400,
+            "El tiempo de lectura antes de ocultar Mini cambió inesperadamente.");
+        Assert(
+            Math.Abs(MiniMotion.EaseReveal(0D)) < 0.0001D
+                && Math.Abs(MiniMotion.EaseReveal(1D) - 1D) < 0.0001D,
+            "La curva de revelado no conserva sus extremos.");
+        Assert(
+            Math.Abs(MiniMotion.EaseHide(0D)) < 0.0001D
+                && Math.Abs(MiniMotion.EaseHide(1D) - 1D) < 0.0001D,
+            "La curva de ocultación no conserva sus extremos.");
+        Assert(
+            MiniMotion.EaseReveal(0.5D) > 0.5D
+                && MiniMotion.EaseHide(0.5D) < 0.5D,
+            "Las curvas no aplican desaceleración y aceleración respectivamente.");
+
+        Assert(
+            KeepActiveService.DeterminePhase(TimeSpan.FromMinutes(16))
+                == KeepActivePhase.Active,
+            "Una sesión con más de 15 minutos debe conservar el estado activo.");
+        Assert(
+            KeepActiveService.DeterminePhase(TimeSpan.FromMinutes(15))
+                == KeepActivePhase.EndingSoon,
+            "El recordatorio inicial debe comenzar al llegar a 15 minutos.");
+        Assert(
+            KeepActiveService.DeterminePhase(TimeSpan.FromMinutes(5))
+                == KeepActivePhase.Critical,
+            "El estado crítico debe comenzar al llegar a 5 minutos.");
+        Assert(
+            KeepActiveService.DeterminePhase(TimeSpan.Zero)
+                == KeepActivePhase.Completed,
+            "Una sesión agotada debe marcarse como completada.");
+
+        Assert(
+            ShellUserState.IsImmersive(UserNotificationState.RunningDirect3DFullScreen)
+                && ShellUserState.IsImmersive(UserNotificationState.PresentationMode)
+                && !ShellUserState.IsImmersive(UserNotificationState.AcceptsNotifications),
+            "La detección de contexto inmersivo no conserva el contrato esperado.");
+        Assert(
+            ShellUserState.AcceptsNotifications(UserNotificationState.AcceptsNotifications)
+                && !ShellUserState.AcceptsNotifications(UserNotificationState.Busy),
+            "Las notificaciones deben respetar el estado informado por Windows.");
+
+        Rectangle transitionSource = new Rectangle(100, 80, 540, 696);
+        Rectangle transitionTarget = new Rectangle(1880, 900, 34, 48);
+        ConnectedTransitionFrame firstFrame = ConnectedTransitionMath.GetFrame(
+            transitionSource,
+            transitionTarget,
+            0D);
+        ConnectedTransitionFrame lastFrame = ConnectedTransitionMath.GetFrame(
+            transitionSource,
+            transitionTarget,
+            1D);
+        Assert(
+            firstFrame.Bounds == transitionSource && Math.Abs(firstFrame.Opacity - 1D) < 0.0001D,
+            "La transición conectada no conserva su cuadro inicial.");
+        Assert(
+            lastFrame.Bounds == transitionTarget && Math.Abs(lastFrame.Opacity) < 0.0001D,
+            "La transición conectada no termina en Mini de forma estable.");
+        Assert(
+            ConnectedTransitionMath.GetFrame(
+                transitionSource,
+                transitionTarget,
+                0.5D).Bounds.Width < transitionSource.Width,
+            "La transición conectada no reduce progresivamente la ventana.");
+
+        string releaseDigest = new string('a', 64);
+        string releaseJson = "{"
+            + "\"tag_name\":\"v1.1.0\","
+            + "\"html_url\":\"https://github.com/adrielcrv/raudo-windows/releases/tag/v1.1.0\","
+            + "\"assets\":[{"
+            + "\"name\":\"Raudo-v1.1.0-win.zip\","
+            + "\"url\":\"https://api.github.com/repos/adrielcrv/raudo-windows/releases/assets/42\","
+            + "\"size\":64000,"
+            + "\"digest\":\"sha256:" + releaseDigest + "\""
+            + "}]}";
+        UpdateCheckResult parsedRelease = UpdateService.ParseRelease(
+            releaseJson,
+            new Version(1, 0, 2));
+        Assert(
+            parsedRelease.IsAvailable
+                && parsedRelease.LatestVersion == new Version(1, 1, 0)
+                && parsedRelease.Package != null
+                && parsedRelease.Package.Sha256 == releaseDigest,
+            "Los metadatos del paquete de actualización no se validaron correctamente.");
+        Assert(
+            !parsedRelease.CanInstall,
+            "Una ejecución portable no debe intentar reemplazarse como instalación local.");
+
+        string installedPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Programs",
+            "Raudo",
+            "Raudo.exe");
+        Assert(
+            UpdateService.IsInstalledLocation(installedPath),
+            "La ruta de instalación local no fue reconocida.");
+        Assert(
+            !UpdateService.IsInstalledLocation(Path.Combine(root, "Raudo.exe")),
+            "Una copia portable fue confundida con la instalación local.");
+
+        string approvedUpdateDirectory = Path.Combine(
+            UpdateInstaller.UpdateRootDirectory,
+            "v1.1.0-0123456789abcdef");
+        Assert(
+            UpdateInstaller.IsApprovedUpdateDirectory(approvedUpdateDirectory),
+            "La carpeta controlada de actualización no fue reconocida.");
+        Assert(
+            !UpdateInstaller.IsApprovedUpdateDirectory(
+                Path.Combine(approvedUpdateDirectory, "nested")),
+            "El actualizador aceptó una carpeta fuera del nivel controlado.");
+
+        string hashFixture = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(hashFixture, "Raudo", Encoding.UTF8);
+            Assert(
+                UpdateService.ComputeSha256(hashFixture).Length == 64,
+                "La validación SHA-256 no produjo una suma completa.");
+        }
+        finally
+        {
+            File.Delete(hashFixture);
+        }
+
+        string packageRoot = Path.Combine(
+            Path.GetTempPath(),
+            "Raudo.Update.Tests",
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(packageRoot);
+        try
+        {
+            string packagePath = Path.Combine(packageRoot, "package.zip");
+            string extractedPath = Path.Combine(packageRoot, "extracted.exe");
+            string raudoAssemblyPath = typeof(UpdateService).Assembly.Location;
+            string executableHash = UpdateService.ComputeSha256(raudoAssemblyPath);
+            using (FileStream packageStream = new FileStream(
+                packagePath,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None))
+            using (ZipArchive archive = new ZipArchive(packageStream, ZipArchiveMode.Create, false))
+            {
+                archive.CreateEntryFromFile(raudoAssemblyPath, "Raudo.exe");
+                ZipArchiveEntry sums = archive.CreateEntry("SHA256SUMS.txt");
+                using (StreamWriter writer = new StreamWriter(sums.Open(), Encoding.ASCII))
+                {
+                    writer.WriteLine(executableHash + "  Raudo.exe");
+                }
+            }
+
+            UpdateService.ExtractAndValidateExecutable(
+                packagePath,
+                extractedPath,
+                typeof(UpdateService).Assembly.GetName().Version);
+            Assert(
+                UpdateService.ComputeSha256(extractedPath) == executableHash,
+                "El ejecutable validado no coincide con el contenido del paquete.");
+        }
+        finally
+        {
+            Directory.Delete(packageRoot, true);
         }
 
         DesktopWindow desktopWindow = new DesktopWindow(

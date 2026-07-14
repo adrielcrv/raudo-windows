@@ -13,6 +13,12 @@ namespace Raudo
         [STAThread]
         private static int Main(string[] args)
         {
+            if (UpdateInstaller.IsApplyRequest(args))
+            {
+                return UpdateInstaller.Apply(args);
+            }
+
+            UpdateInstaller.Cleanup(args);
             bool startInBackground = args.Any(
                 argument => string.Equals(argument, "--background", StringComparison.OrdinalIgnoreCase));
 

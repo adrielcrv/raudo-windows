@@ -18,6 +18,8 @@ namespace Raudo
         public Color PrimaryHover { get; private set; }
         public Color Active { get; private set; }
         public Color ActiveSoft { get; private set; }
+        public Color Warning { get; private set; }
+        public Color Critical { get; private set; }
         public Color Danger { get; private set; }
         public Color DangerHover { get; private set; }
 
@@ -39,6 +41,8 @@ namespace Raudo
                     PrimaryHover = Color.FromArgb(96, 165, 250),
                     Active = Color.FromArgb(45, 212, 191),
                     ActiveSoft = Color.FromArgb(19, 78, 74),
+                    Warning = Color.FromArgb(245, 158, 11),
+                    Critical = Color.FromArgb(249, 115, 22),
                     Danger = Color.FromArgb(220, 38, 38),
                     DangerHover = Color.FromArgb(239, 68, 68)
                 };
@@ -58,6 +62,8 @@ namespace Raudo
                 PrimaryHover = Color.FromArgb(29, 78, 216),
                 Active = Color.FromArgb(13, 148, 136),
                 ActiveSoft = Color.FromArgb(204, 251, 241),
+                Warning = Color.FromArgb(217, 119, 6),
+                Critical = Color.FromArgb(234, 88, 12),
                 Danger = Color.FromArgb(190, 24, 93),
                 DangerHover = Color.FromArgb(157, 23, 77)
             };

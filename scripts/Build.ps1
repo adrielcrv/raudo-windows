@@ -106,6 +106,8 @@ else {
         '/platform:anycpu',
         '/reference:System.dll',
         '/reference:System.Drawing.dll',
+        '/reference:System.IO.Compression.dll',
+        '/reference:System.IO.Compression.FileSystem.dll',
         '/reference:System.Windows.Forms.dll',
         '/reference:System.Web.Extensions.dll',
         "/win32icon:$iconPath",
@@ -129,6 +131,8 @@ if (Test-Path -LiteralPath $testSource) {
         /warnaserror+ `
         /reference:System.dll `
         /reference:System.Drawing.dll `
+        /reference:System.IO.Compression.dll `
+        /reference:System.IO.Compression.FileSystem.dll `
         /reference:System.Windows.Forms.dll `
         /reference:System.Web.Extensions.dll `
         "/reference:$outputPath" `

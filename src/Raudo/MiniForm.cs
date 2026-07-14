@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
@@ -18,19 +19,22 @@ namespace Raudo
 
     internal sealed class MiniForm : Form
     {
-        private const int CollapsedWidth = 18;
-        private const int CollapsedHeight = 44;
-        private const int CollapsedHiddenOffset = 6;
-        private const int ExpandedHeight = 52;
-        private const int ArrowZoneWidth = 52;
-        private const int CenterZoneWidth = 52;
+        private const int EdgeWidth = 20;
+        private const int ControlHeight = 48;
+        private const int ArrowZoneWidth = 48;
+        private const int CenterZoneWidth = 48;
         private const uint SetWindowPosNoZOrder = 0x0004;
         private const uint SetWindowPosNoActivate = 0x0010;
 
         private readonly VirtualDesktopService desktopService;
         private readonly ContextMenuStrip windowMenu;
         private readonly Font windowMenuHeaderFont;
+        private readonly Timer revealTimer;
         private readonly Timer collapseTimer;
+        private readonly Timer animationTimer;
+        private readonly Timer attentionTimer;
+        private readonly Timer presenceTimer;
+        private readonly Timer opacityTimer;
         private readonly Timer navigationRefreshTimer;
         private readonly ToolTip toolTip;
 
@@ -41,12 +45,27 @@ namespace Raudo
         private MiniHitZone hoverZone;
         private MiniHitZone pressedZone;
         private bool expanded;
+        private double revealProgress;
+        private double animationStartProgress;
+        private double animationTargetProgress;
+        private long animationStartTimestamp;
+        private int animationDurationMilliseconds;
+        private long attentionStartTimestamp;
+        private int attentionDurationMilliseconds;
+        private int attentionCycles;
+        private double attentionPulse;
+        private MiniPulseKind pulseKind;
         private bool dragging;
-        private bool active;
+        private bool pointerInside;
         private bool allowClose;
         private bool canNavigateLeft = true;
         private bool canNavigateRight = true;
         private bool followsActiveDesktop;
+        private KeepActivePhase sessionPhase;
+        private UserNotificationState userNotificationState;
+        private double opacityStart;
+        private double opacityTarget;
+        private long opacityStartTimestamp;
 
         public MiniForm(VirtualDesktopService service, RaudoSettings settings)
         {
@@ -57,7 +76,7 @@ namespace Raudo
             AccessibleDescription = "Navega entre escritorios y trae ventanas al escritorio actual.";
             AutoScaleMode = AutoScaleMode.Dpi;
             FormBorderStyle = FormBorderStyle.None;
-            ClientSize = new Size(CollapsedWidth, CollapsedHeight);
+            ClientSize = new Size(EdgeWidth, ControlHeight);
             MaximizeBox = false;
             MinimizeBox = false;
             ShowInTaskbar = false;
@@ -71,11 +90,35 @@ namespace Raudo
             windowMenu = new ContextMenuStrip();
             windowMenu.Font = new Font("Segoe UI", 9.5F, FontStyle.Regular, GraphicsUnit.Point);
             windowMenuHeaderFont = new Font(windowMenu.Font, FontStyle.Bold);
-            windowMenu.Closed += delegate { ScheduleCollapse(); };
+            windowMenu.Closed += delegate
+            {
+                ScheduleCollapse();
+                UpdateWindowOpacity();
+            };
+
+            revealTimer = new Timer();
+            revealTimer.Interval = MiniMotion.RevealIntentDelayMilliseconds;
+            revealTimer.Tick += RevealTimerTick;
 
             collapseTimer = new Timer();
-            collapseTimer.Interval = 350;
+            collapseTimer.Interval = MiniMotion.CollapseDelayMilliseconds;
             collapseTimer.Tick += CollapseTimerTick;
+
+            animationTimer = new Timer();
+            animationTimer.Interval = MiniMotion.FrameIntervalMilliseconds;
+            animationTimer.Tick += AnimationTimerTick;
+
+            attentionTimer = new Timer();
+            attentionTimer.Interval = 30;
+            attentionTimer.Tick += AttentionTimerTick;
+
+            presenceTimer = new Timer();
+            presenceTimer.Interval = 2000;
+            presenceTimer.Tick += PresenceTimerTick;
+
+            opacityTimer = new Timer();
+            opacityTimer.Interval = MiniMotion.FrameIntervalMilliseconds;
+            opacityTimer.Tick += OpacityTimerTick;
 
             navigationRefreshTimer = new Timer();
             navigationRefreshTimer.Interval = 450;
@@ -84,7 +127,10 @@ namespace Raudo
             toolTip = new ToolTip();
             toolTip.InitialDelay = 350;
             toolTip.ReshowDelay = 100;
-            toolTip.SetToolTip(this, "Raudo Mini");
+            toolTip.SetToolTip(this, "Raudo Mini · Inactivo");
+
+            sessionPhase = KeepActivePhase.Inactive;
+            userNotificationState = ShellUserState.Current();
 
             ApplyTheme(ThemeService.Current());
             LayoutAtAnchor();
@@ -118,13 +164,24 @@ namespace Raudo
             }
         }
 
-        public void SetActive(bool isActive)
+        public void SetSessionPhase(KeepActivePhase phase)
         {
-            if (active != isActive)
+            if (sessionPhase != phase)
             {
-                active = isActive;
+                sessionPhase = phase;
+                toolTip.SetToolTip(this, GetSessionTooltip());
                 Invalidate();
             }
+        }
+
+        public void PulseAttention()
+        {
+            StartVisualPulse(MiniPulseKind.Attention, 1400, 2);
+        }
+
+        public void PulseLanding()
+        {
+            StartVisualPulse(MiniPulseKind.Landing, 520, 1);
         }
 
         public void ShowMini()
@@ -137,6 +194,8 @@ namespace Raudo
 
             LayoutAtAnchor();
             TopMost = true;
+            UpdatePresenceContext();
+            presenceTimer.Start();
             string ignored;
             followsActiveDesktop = desktopService.TryKeepWindowVisibleAcrossDesktops(
                 Handle,
@@ -152,27 +211,55 @@ namespace Raudo
         public void AllowCloseAndClose()
         {
             allowClose = true;
+            revealTimer.Stop();
             collapseTimer.Stop();
+            animationTimer.Stop();
+            attentionTimer.Stop();
+            presenceTimer.Stop();
+            opacityTimer.Stop();
             navigationRefreshTimer.Stop();
             Close();
         }
 
         internal void SetExpandedForTesting(bool shouldExpand)
         {
-            SetExpanded(shouldExpand);
+            SetExpanded(shouldExpand, false);
+        }
+
+        internal bool IsAnimationRunningForTesting
+        {
+            get { return animationTimer.Enabled; }
+        }
+
+        internal void SetRevealProgressForTesting(double progress)
+        {
+            animationTimer.Stop();
+            expanded = progress > 0D;
+            ApplyRevealProgress(progress);
         }
 
         internal void SetNavigationAvailabilityForTesting(bool left, bool right)
         {
             canNavigateLeft = left;
             canNavigateRight = right;
-            UpdateClientSizeForState();
-            LayoutAtAnchor();
+            ApplyRevealProgress(revealProgress);
+        }
+
+        internal void SetNotificationStateForTesting(UserNotificationState state)
+        {
+            userNotificationState = state;
+            UpdateWindowOpacity(false);
+        }
+
+        internal double WindowOpacityForTesting
+        {
+            get { return Opacity; }
         }
 
         protected override void OnHandleCreated(EventArgs eventArgs)
         {
             base.OnHandleCreated(eventArgs);
+            ApplyRevealProgress(revealProgress);
             LayoutAtAnchor();
             UpdateWindowRegion();
             if (palette != null)
@@ -191,59 +278,103 @@ namespace Raudo
         {
             base.OnPaint(eventArgs);
             eventArgs.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            eventArgs.Graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
 
             Rectangle bounds = new Rectangle(0, 0, ClientSize.Width - 1, ClientSize.Height - 1);
-            using (GraphicsPath path = DrawingPaths.RoundedRectangle(bounds, ClientSize.Height / 2))
-            using (SolidBrush background = new SolidBrush(palette.Surface))
-            using (Pen border = new Pen(palette.Border, 1F))
+            bool dockedLeft = IsDockedLeft(
+                dockAnchor,
+                Screen.FromPoint(dockAnchor).WorkingArea);
+            float progress = (float)revealProgress;
+            float edgeOpacity = 1F - Remap(progress, 0F, 0.42F);
+            float contentOpacity = Remap(progress, 0.46F, 1F);
+            Color accent = palette.Primary;
+            if (attentionPulse > 0D)
+            {
+                Color pulseColor = pulseKind == MiniPulseKind.Landing
+                    ? Color.White
+                    : GetSessionStatusColor();
+                float strength = pulseKind == MiniPulseKind.Landing ? 0.22F : 0.34F;
+                accent = BlendColor(
+                    accent,
+                    pulseColor,
+                    (float)attentionPulse * strength);
+            }
+            Color surface = BlendColor(accent, palette.Surface, progress);
+            Color borderColor = BlendColor(accent, palette.Border, progress);
+            using (GraphicsPath path = CreateContainerPath(bounds, dockedLeft, progress))
+            using (SolidBrush background = new SolidBrush(surface))
+            using (Pen border = new Pen(borderColor, Math.Max(1F, ScaleLogical(1))))
             {
                 eventArgs.Graphics.FillPath(background, path);
                 eventArgs.Graphics.DrawPath(border, path);
             }
 
-            if (!expanded)
+            if (edgeOpacity > 0F)
             {
-                DrawDockHandle(eventArgs.Graphics);
+                DrawEdgeHandle(eventArgs.Graphics, dockedLeft, edgeOpacity);
+                DrawEdgeSessionIndicator(eventArgs.Graphics, dockedLeft, edgeOpacity);
+            }
+
+            if (contentOpacity <= 0F)
+            {
                 return;
             }
 
-            if (canNavigateLeft)
+            if (canNavigateLeft && GetZoneBounds(MiniHitZone.Left).Right <= ClientSize.Width)
             {
                 DrawHitZone(eventArgs.Graphics, MiniHitZone.Left);
-                DrawArrow(eventArgs.Graphics, true);
+                DrawArrow(eventArgs.Graphics, true, contentOpacity);
             }
 
-            if (canNavigateRight)
+            if (canNavigateRight && GetZoneBounds(MiniHitZone.Right).Right <= ClientSize.Width)
             {
                 DrawHitZone(eventArgs.Graphics, MiniHitZone.Right);
-                DrawArrow(eventArgs.Graphics, false);
+                DrawArrow(eventArgs.Graphics, false, contentOpacity);
             }
 
-            int markSize = 34;
+            int markSize = ScaleLogical(32);
             Rectangle centerBounds = GetZoneBounds(MiniHitZone.Center);
             Rectangle markBounds = new Rectangle(
                 centerBounds.Left + (centerBounds.Width - markSize) / 2,
                 (ClientSize.Height - markSize) / 2,
                 markSize,
                 markSize);
-            BrandDrawing.DrawMark(
-                eventArgs.Graphics,
-                markBounds,
-                active ? palette.Active : palette.Primary,
-                Color.White);
+            if (markBounds.Right <= ClientSize.Width)
+            {
+                BrandDrawing.DrawMark(
+                    eventArgs.Graphics,
+                    markBounds,
+                    WithAlpha(accent, contentOpacity),
+                    WithAlpha(Color.White, contentOpacity));
+            }
+
+            DrawExpandedSessionIndicator(eventArgs.Graphics, contentOpacity, markBounds);
         }
 
         protected override void OnMouseEnter(EventArgs eventArgs)
         {
             base.OnMouseEnter(eventArgs);
+            pointerInside = true;
+            UpdateWindowOpacity();
             collapseTimer.Stop();
             RefreshNavigationAvailability();
-            SetExpanded(true);
+            if (revealProgress > 0D)
+            {
+                SetExpanded(true);
+            }
+            else
+            {
+                revealTimer.Stop();
+                revealTimer.Start();
+            }
         }
 
         protected override void OnMouseLeave(EventArgs eventArgs)
         {
             base.OnMouseLeave(eventArgs);
+            pointerInside = false;
+            UpdateWindowOpacity();
+            revealTimer.Stop();
             hoverZone = MiniHitZone.None;
             Invalidate();
             ScheduleCollapse();
@@ -280,7 +411,9 @@ namespace Raudo
                 Invalidate();
             }
 
-            Cursor = nextZone == MiniHitZone.Center ? Cursors.SizeAll : Cursors.Hand;
+            Cursor = nextZone == MiniHitZone.Center && revealProgress >= 0.98D
+                ? Cursors.SizeAll
+                : Cursors.Hand;
         }
 
         protected override void OnMouseDown(MouseEventArgs eventArgs)
@@ -401,7 +534,12 @@ namespace Raudo
         {
             if (disposing)
             {
+                revealTimer.Dispose();
                 collapseTimer.Dispose();
+                animationTimer.Dispose();
+                attentionTimer.Dispose();
+                presenceTimer.Dispose();
+                opacityTimer.Dispose();
                 navigationRefreshTimer.Dispose();
                 toolTip.Dispose();
                 ClearWindowMenuItems();
@@ -438,9 +576,11 @@ namespace Raudo
 
         private void ShowWindowMenu()
         {
+            SetExpanded(true, false);
             collapseTimer.Stop();
             BuildWindowMenu();
             windowMenu.Show(this, new Point(ClientSize.Width / 2, ClientSize.Height));
+            UpdateWindowOpacity();
         }
 
         private void BuildWindowMenu()
@@ -575,50 +715,222 @@ namespace Raudo
 
         private void SetExpanded(bool shouldExpand)
         {
-            if (expanded == shouldExpand)
+            SetExpanded(shouldExpand, true);
+        }
+
+        private void SetExpanded(bool shouldExpand, bool animate)
+        {
+            revealTimer.Stop();
+            double target = shouldExpand ? 1D : 0D;
+            if (expanded == shouldExpand
+                && Math.Abs(revealProgress - target) < 0.001D)
             {
-                UpdateClientSizeForState();
                 return;
             }
 
             expanded = shouldExpand;
-            UpdateClientSizeForState();
-            LayoutAtAnchor();
-            Invalidate();
+            animationTimer.Stop();
+            if (!animate || !MotionSettings.ClientAreaAnimationsEnabled())
+            {
+                ApplyRevealProgress(target);
+                return;
+            }
+
+            animationStartProgress = revealProgress;
+            animationTargetProgress = target;
+            double distance = Math.Abs(animationTargetProgress - animationStartProgress);
+            animationDurationMilliseconds = Math.Max(
+                1,
+                (int)Math.Round(MiniMotion.TransitionDurationMilliseconds * distance));
+            animationStartTimestamp = Stopwatch.GetTimestamp();
+            animationTimer.Start();
         }
 
-        private void UpdateClientSizeForState()
+        private void ApplyRevealProgress(double progress)
         {
+            revealProgress = Math.Max(0D, Math.Min(1D, progress));
             Size requested = GetRequestedSize();
             if (ClientSize != requested)
             {
                 ClientSize = requested;
             }
+
+            LayoutAtAnchor();
+            UpdateWindowRegion();
+            UpdateWindowOpacity(false);
+            Invalidate();
         }
 
         private Size GetRequestedSize()
         {
-            return expanded
-                ? new Size(
-                    CenterZoneWidth
-                        + (canNavigateLeft ? ArrowZoneWidth : 0)
-                        + (canNavigateRight ? ArrowZoneWidth : 0),
-                    ExpandedHeight)
-                : new Size(CollapsedWidth, CollapsedHeight);
+            int edgeWidth = ScaleLogical(EdgeWidth);
+            int expandedWidth = GetExpandedWidth();
+            int width = edgeWidth + (int)Math.Round(
+                (expandedWidth - edgeWidth) * revealProgress);
+            return new Size(width, ScaleLogical(ControlHeight));
         }
 
         private void ScheduleCollapse()
         {
+            revealTimer.Stop();
             collapseTimer.Stop();
             collapseTimer.Start();
         }
 
+        private void RevealTimerTick(object sender, EventArgs eventArgs)
+        {
+            revealTimer.Stop();
+            if (Bounds.Contains(Cursor.Position))
+            {
+                SetExpanded(true);
+            }
+        }
+
         private void CollapseTimerTick(object sender, EventArgs eventArgs)
         {
-            if (!windowMenu.Visible && !Bounds.Contains(Cursor.Position))
+            if (!windowMenu.Visible
+                && !dragging
+                && !Bounds.Contains(Cursor.Position))
             {
                 collapseTimer.Stop();
                 SetExpanded(false);
+            }
+        }
+
+        private void AnimationTimerTick(object sender, EventArgs eventArgs)
+        {
+            double elapsedMilliseconds = (Stopwatch.GetTimestamp() - animationStartTimestamp)
+                * 1000D
+                / Stopwatch.Frequency;
+            double time = Math.Min(1D, elapsedMilliseconds / animationDurationMilliseconds);
+            double eased = animationTargetProgress > animationStartProgress
+                ? MiniMotion.EaseReveal(time)
+                : MiniMotion.EaseHide(time);
+            double next = animationStartProgress
+                + ((animationTargetProgress - animationStartProgress) * eased);
+            ApplyRevealProgress(next);
+
+            if (time >= 1D)
+            {
+                animationTimer.Stop();
+                ApplyRevealProgress(animationTargetProgress);
+            }
+        }
+
+        private void AttentionTimerTick(object sender, EventArgs eventArgs)
+        {
+            double elapsedMilliseconds = (Stopwatch.GetTimestamp() - attentionStartTimestamp)
+                * 1000D
+                / Stopwatch.Frequency;
+            double progress = Math.Min(1D, elapsedMilliseconds / attentionDurationMilliseconds);
+            attentionPulse = 0.5D - (0.5D * Math.Cos(
+                progress * attentionCycles * Math.PI * 2D));
+            Invalidate();
+
+            if (progress >= 1D)
+            {
+                attentionTimer.Stop();
+                attentionPulse = 0D;
+                pulseKind = MiniPulseKind.None;
+                Invalidate();
+            }
+        }
+
+        private void PresenceTimerTick(object sender, EventArgs eventArgs)
+        {
+            UpdatePresenceContext();
+        }
+
+        private void StartVisualPulse(MiniPulseKind kind, int durationMilliseconds, int cycles)
+        {
+            UserNotificationState currentState = ShellUserState.Current();
+            if (currentState != userNotificationState)
+            {
+                userNotificationState = currentState;
+                UpdateWindowOpacity();
+            }
+
+            if (ShellUserState.IsImmersive(currentState)
+                || !MotionSettings.ClientAreaAnimationsEnabled())
+            {
+                return;
+            }
+
+            attentionTimer.Stop();
+            pulseKind = kind;
+            attentionPulse = 0D;
+            attentionDurationMilliseconds = durationMilliseconds;
+            attentionCycles = cycles;
+            attentionStartTimestamp = Stopwatch.GetTimestamp();
+            attentionTimer.Start();
+        }
+
+        private void UpdatePresenceContext()
+        {
+            UserNotificationState next = ShellUserState.Current();
+            if (next != userNotificationState)
+            {
+                userNotificationState = next;
+                if (ShellUserState.IsImmersive(userNotificationState))
+                {
+                    attentionTimer.Stop();
+                    attentionPulse = 0D;
+                    pulseKind = MiniPulseKind.None;
+                }
+
+                UpdateWindowOpacity();
+                Invalidate();
+            }
+        }
+
+        private void UpdateWindowOpacity()
+        {
+            UpdateWindowOpacity(true);
+        }
+
+        private void UpdateWindowOpacity(bool animate)
+        {
+            double restingOpacity = ShellUserState.IsImmersive(userNotificationState)
+                ? 0.38D
+                : 0.82D;
+            double target = pointerInside || windowMenu.Visible
+                ? 1D
+                : restingOpacity + ((1D - restingOpacity) * revealProgress);
+            if (Math.Abs(Opacity - target) <= 0.005D)
+            {
+                opacityTimer.Stop();
+                Opacity = target;
+                return;
+            }
+
+            if (!animate || !Visible || !MotionSettings.ClientAreaAnimationsEnabled())
+            {
+                opacityTimer.Stop();
+                Opacity = target;
+                return;
+            }
+
+            opacityTimer.Stop();
+            opacityStart = Opacity;
+            opacityTarget = target;
+            opacityStartTimestamp = Stopwatch.GetTimestamp();
+            opacityTimer.Start();
+        }
+
+        private void OpacityTimerTick(object sender, EventArgs eventArgs)
+        {
+            double elapsedMilliseconds = (Stopwatch.GetTimestamp() - opacityStartTimestamp)
+                * 1000D
+                / Stopwatch.Frequency;
+            double time = Math.Min(
+                1D,
+                elapsedMilliseconds / MiniMotion.PresenceTransitionDurationMilliseconds);
+            double eased = MiniMotion.EaseReveal(time);
+            Opacity = opacityStart + ((opacityTarget - opacityStart) * eased);
+            if (time >= 1D)
+            {
+                opacityTimer.Stop();
+                Opacity = opacityTarget;
             }
         }
 
@@ -643,8 +955,7 @@ namespace Raudo
             canNavigateRight = right;
             if (expanded && changed)
             {
-                UpdateClientSizeForState();
-                LayoutAtAnchor();
+                ApplyRevealProgress(revealProgress);
             }
 
             Invalidate();
@@ -652,7 +963,7 @@ namespace Raudo
 
         private MiniHitZone HitTest(Point point)
         {
-            if (!expanded)
+            if (!expanded || revealProgress < 0.98D)
             {
                 return MiniHitZone.Center;
             }
@@ -686,21 +997,25 @@ namespace Raudo
             }
         }
 
-        private void DrawArrow(Graphics graphics, bool left)
+        private void DrawArrow(Graphics graphics, bool left, float opacity)
         {
             Rectangle zone = GetZoneBounds(left ? MiniHitZone.Left : MiniHitZone.Right);
             int centerX = zone.Left + zone.Width / 2;
             int centerY = ClientSize.Height / 2;
-            int tipX = centerX + (left ? -3 : 3);
-            int tailX = centerX + (left ? 3 : -3);
-            using (Pen pen = new Pen(palette.Text, 2F))
+            int horizontal = ScaleLogical(4);
+            int vertical = ScaleLogical(6);
+            int tipX = centerX + (left ? -horizontal : horizontal);
+            int tailX = centerX + (left ? horizontal : -horizontal);
+            using (Pen pen = new Pen(
+                WithAlpha(palette.Text, opacity),
+                Math.Max(1.5F, ScaleLogical(2))))
             {
                 pen.StartCap = LineCap.Round;
                 pen.EndCap = LineCap.Round;
                 graphics.DrawLine(
                     pen,
                     tailX,
-                    centerY - 6,
+                    centerY - vertical,
                     tipX,
                     centerY);
                 graphics.DrawLine(
@@ -708,42 +1023,173 @@ namespace Raudo
                     tipX,
                     centerY,
                     tailX,
-                    centerY + 6);
+                    centerY + vertical);
             }
         }
 
-        private void DrawDockHandle(Graphics graphics)
+        private void DrawEdgeHandle(Graphics graphics, bool dockedLeft, float opacity)
         {
-            Rectangle accent = new Rectangle(
-                (ClientSize.Width - 5) / 2,
-                9,
-                5,
-                ClientSize.Height - 18);
-            using (GraphicsPath path = DrawingPaths.RoundedRectangle(accent, 3))
-            using (SolidBrush brush = new SolidBrush(active ? palette.Active : palette.Primary))
+            int handleWidth = Math.Min(ScaleLogical(EdgeWidth), ClientSize.Width);
+            Rectangle handle = new Rectangle(
+                dockedLeft ? 0 : ClientSize.Width - handleWidth,
+                0,
+                handleWidth,
+                ClientSize.Height);
+            int centerX = handle.Left + handle.Width / 2 + (dockedLeft ? 1 : -1);
+            int centerY = handle.Top + handle.Height / 2;
+            int horizontal = ScaleLogical(3);
+            int vertical = ScaleLogical(5);
+            bool pointsRight = dockedLeft;
+            int tipX = centerX + (pointsRight ? horizontal : -horizontal);
+            int tailX = centerX + (pointsRight ? -horizontal : horizontal);
+            using (Pen glyph = new Pen(
+                WithAlpha(Color.White, opacity),
+                Math.Max(1.5F, ScaleLogical(2))))
             {
-                graphics.FillPath(brush, path);
+                glyph.StartCap = LineCap.Round;
+                glyph.EndCap = LineCap.Round;
+                graphics.DrawLine(glyph, tailX, centerY - vertical, tipX, centerY);
+                graphics.DrawLine(glyph, tipX, centerY, tailX, centerY + vertical);
             }
+        }
+
+        private void DrawEdgeSessionIndicator(
+            Graphics graphics,
+            bool dockedLeft,
+            float opacity)
+        {
+            if (sessionPhase == KeepActivePhase.Inactive)
+            {
+                return;
+            }
+
+            int handleWidth = Math.Min(ScaleLogical(EdgeWidth), ClientSize.Width);
+            int handleLeft = dockedLeft ? 0 : ClientSize.Width - handleWidth;
+            int size = ScaleLogical(5);
+            Rectangle dot = new Rectangle(
+                handleLeft + (handleWidth - size) / 2,
+                ScaleLogical(7),
+                size,
+                size);
+            DrawStatusDot(graphics, dot, opacity);
+        }
+
+        private void DrawExpandedSessionIndicator(
+            Graphics graphics,
+            float opacity,
+            Rectangle markBounds)
+        {
+            if (sessionPhase == KeepActivePhase.Inactive
+                || markBounds.Left < 0
+                || markBounds.Right > ClientSize.Width)
+            {
+                return;
+            }
+
+            int size = ScaleLogical(7);
+            Rectangle dot = new Rectangle(
+                markBounds.Right - size + ScaleLogical(1),
+                markBounds.Bottom - size + ScaleLogical(1),
+                size,
+                size);
+            DrawStatusDot(graphics, dot, opacity);
+        }
+
+        private void DrawStatusDot(Graphics graphics, Rectangle bounds, float opacity)
+        {
+            Color color = GetSessionStatusColor();
+            if (pulseKind == MiniPulseKind.Attention && attentionPulse > 0D)
+            {
+                color = BlendColor(color, Color.White, (float)attentionPulse * 0.24F);
+            }
+
+            using (SolidBrush fill = new SolidBrush(WithAlpha(color, opacity)))
+            using (Pen ring = new Pen(
+                WithAlpha(Color.White, opacity * 0.9F),
+                Math.Max(1F, ScaleLogical(1))))
+            {
+                graphics.FillEllipse(fill, bounds);
+                graphics.DrawEllipse(ring, bounds);
+            }
+        }
+
+        private Color GetSessionStatusColor()
+        {
+            if (sessionPhase == KeepActivePhase.EndingSoon)
+            {
+                return palette.Warning;
+            }
+
+            if (sessionPhase == KeepActivePhase.Critical)
+            {
+                return palette.Critical;
+            }
+
+            if (sessionPhase == KeepActivePhase.Completed)
+            {
+                return palette.Danger;
+            }
+
+            return palette.Active;
+        }
+
+        private string GetSessionTooltip()
+        {
+            if (sessionPhase == KeepActivePhase.Active)
+            {
+                return "Raudo Mini · Pulso encendido";
+            }
+
+            if (sessionPhase == KeepActivePhase.EndingSoon)
+            {
+                return "Raudo Mini · Quedan 15 minutos o menos";
+            }
+
+            if (sessionPhase == KeepActivePhase.Critical)
+            {
+                return "Raudo Mini · Quedan 5 minutos o menos";
+            }
+
+            if (sessionPhase == KeepActivePhase.Completed)
+            {
+                return "Raudo Mini · El tiempo terminó";
+            }
+
+            return "Raudo Mini · Inactivo";
         }
 
         private Rectangle GetZoneBounds(MiniHitZone zone)
         {
-            int centerLeft = canNavigateLeft ? ArrowZoneWidth : 0;
+            int arrowWidth = ScaleLogical(ArrowZoneWidth);
+            int centerWidth = ScaleLogical(CenterZoneWidth);
+            bool dockedLeft = IsDockedLeft(
+                dockAnchor,
+                Screen.FromPoint(dockAnchor).WorkingArea);
+            int contentOffset = dockedLeft ? 0 : ClientSize.Width - GetExpandedWidth();
+            int centerLeft = contentOffset + (canNavigateLeft ? arrowWidth : 0);
             if (zone == MiniHitZone.Left)
             {
-                return new Rectangle(0, 0, ArrowZoneWidth, ClientSize.Height);
+                return new Rectangle(contentOffset, 0, arrowWidth, ClientSize.Height);
             }
 
             if (zone == MiniHitZone.Right)
             {
                 return new Rectangle(
-                    centerLeft + CenterZoneWidth,
+                    centerLeft + centerWidth,
                     0,
-                    ArrowZoneWidth,
+                    arrowWidth,
                     ClientSize.Height);
             }
 
-            return new Rectangle(centerLeft, 0, CenterZoneWidth, ClientSize.Height);
+            return new Rectangle(centerLeft, 0, centerWidth, ClientSize.Height);
+        }
+
+        private int GetExpandedWidth()
+        {
+            return ScaleLogical(
+                CenterZoneWidth
+                    + (canNavigateLeft ? ArrowZoneWidth : 0)
+                    + (canNavigateRight ? ArrowZoneWidth : 0));
         }
 
         private void LayoutAtAnchor()
@@ -753,24 +1199,14 @@ namespace Raudo
             Rectangle area = screen.WorkingArea;
             bool dockedLeft = IsDockedLeft(dockAnchor, area);
             Size requested = GetRequestedSize();
-            int x;
-            if (expanded)
-            {
-                x = dockedLeft
-                    ? area.Left + 4
-                    : area.Right - requested.Width - 4;
-            }
-            else
-            {
-                x = dockedLeft
-                    ? area.Left - CollapsedHiddenOffset
-                    : area.Right - requested.Width + CollapsedHiddenOffset;
-            }
+            int x = dockedLeft
+                ? area.Left
+                : area.Right - requested.Width;
 
             int y = Math.Max(
-                area.Top + 4,
+                area.Top + ScaleLogical(4),
                 Math.Min(
-                    area.Bottom - requested.Height - 4,
+                    area.Bottom - requested.Height - ScaleLogical(4),
                     dockAnchor.Y - requested.Height / 2));
             if (IsHandleCreated)
             {
@@ -794,7 +1230,7 @@ namespace Raudo
             Screen screen = Screen.FromPoint(anchor);
             Rectangle area = screen.WorkingArea;
             bool dockedLeft = IsDockedLeft(anchor, area);
-            int yMargin = CollapsedHeight / 2 + 4;
+            int yMargin = ControlHeight / 2 + 4;
             return new Point(
                 dockedLeft ? area.Left : area.Right - 1,
                 Math.Max(
@@ -850,9 +1286,13 @@ namespace Raudo
                 return;
             }
 
-            using (GraphicsPath path = DrawingPaths.RoundedRectangle(
+            bool dockedLeft = IsDockedLeft(
+                dockAnchor,
+                Screen.FromPoint(dockAnchor).WorkingArea);
+            using (GraphicsPath path = CreateContainerPath(
                 new Rectangle(0, 0, ClientSize.Width, ClientSize.Height),
-                ClientSize.Height / 2))
+                dockedLeft,
+                (float)revealProgress))
             {
                 Region previous = Region;
                 Region = new Region(path);
@@ -863,12 +1303,96 @@ namespace Raudo
             }
         }
 
+        private GraphicsPath CreateContainerPath(
+            Rectangle bounds,
+            bool dockedLeft,
+            float progress)
+        {
+            float expandedRadius = ScaleLogical(12);
+            float innerRadius = ScaleLogical(10) + (ScaleLogical(2) * progress);
+            float screenRadius = expandedRadius * progress;
+            float topLeft = dockedLeft ? screenRadius : innerRadius;
+            float bottomLeft = topLeft;
+            float topRight = dockedLeft ? innerRadius : screenRadius;
+            float bottomRight = topRight;
+            return DrawingPaths.RoundedRectangle(
+                bounds,
+                topLeft,
+                topRight,
+                bottomRight,
+                bottomLeft);
+        }
+
+        private int ScaleLogical(int logicalPixels)
+        {
+            int dpi = IsHandleCreated ? DeviceDpi : 96;
+            return Math.Max(1, (logicalPixels * dpi + 48) / 96);
+        }
+
+        private static Color BlendColor(Color from, Color to, float amount)
+        {
+            float value = Math.Max(0F, Math.Min(1F, amount));
+            return Color.FromArgb(
+                (int)Math.Round(from.A + ((to.A - from.A) * value)),
+                (int)Math.Round(from.R + ((to.R - from.R) * value)),
+                (int)Math.Round(from.G + ((to.G - from.G) * value)),
+                (int)Math.Round(from.B + ((to.B - from.B) * value)));
+        }
+
+        private static Color WithAlpha(Color color, float opacity)
+        {
+            return Color.FromArgb(
+                (int)Math.Round(color.A * Math.Max(0F, Math.Min(1F, opacity))),
+                color.R,
+                color.G,
+                color.B);
+        }
+
+        private static float Remap(float value, float start, float end)
+        {
+            if (end <= start)
+            {
+                return value >= end ? 1F : 0F;
+            }
+
+            return Math.Max(0F, Math.Min(1F, (value - start) / (end - start)));
+        }
+
         private enum MiniHitZone
         {
             None,
             Left,
             Center,
             Right
+        }
+
+        private enum MiniPulseKind
+        {
+            None,
+            Attention,
+            Landing
+        }
+    }
+
+    internal static class MiniMotion
+    {
+        public const int RevealIntentDelayMilliseconds = 80;
+        public const int CollapseDelayMilliseconds = 1400;
+        public const int TransitionDurationMilliseconds = 167;
+        public const int PresenceTransitionDurationMilliseconds = 180;
+        public const int FrameIntervalMilliseconds = 15;
+
+        public static double EaseReveal(double progress)
+        {
+            double value = Math.Max(0D, Math.Min(1D, progress));
+            double inverse = 1D - value;
+            return 1D - (inverse * inverse * inverse);
+        }
+
+        public static double EaseHide(double progress)
+        {
+            double value = Math.Max(0D, Math.Min(1D, progress));
+            return value * value * value;
         }
     }
 }

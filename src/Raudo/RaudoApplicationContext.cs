@@ -18,6 +18,7 @@ namespace Raudo
         private readonly ToolStripMenuItem durationMenu;
         private readonly ToolStripMenuItem startupItem;
         private readonly ToolStripMenuItem miniModeItem;
+        private readonly System.Windows.Forms.Timer reminderRetryTimer;
         private readonly Icon idleIcon;
         private readonly Icon activeIcon;
         private readonly Control dispatcher;
@@ -26,6 +27,10 @@ namespace Raudo
         private readonly VirtualDesktopService virtualDesktopService;
 
         private MiniForm miniForm;
+        private ConnectedMinimizeTransition minimizeTransition;
+        private KeepActivePhase? pendingReminder;
+        private DateTime pendingReminderExpiresUtc;
+        private KeepActivePhase observedPhase;
 
         private bool exiting;
 
@@ -37,6 +42,7 @@ namespace Raudo
             activeIcon = IconFactory.Create(true);
             keepActiveService = new KeepActiveService();
             keepActiveService.StateChanged += KeepActiveServiceStateChanged;
+            keepActiveService.AttentionRequired += KeepActiveServiceAttentionRequired;
             virtualDesktopService = new VirtualDesktopService();
 
             form = new MainForm(keepActiveService, settings, idleIcon);
@@ -45,12 +51,14 @@ namespace Raudo
             form.ScreenCaptureRequested += ScreenCaptureRequested;
             form.StartupChanged += StartupChanged;
             form.MiniModeChanged += MiniModeChanged;
+            form.MinimizeRequested += MainFormMinimizeRequested;
+            form.UpdateRestartRequested += MainFormUpdateRestartRequested;
 
             trayMenu = new ContextMenuStrip();
             trayMenu.Font = new Font("Segoe UI", 9.5F, FontStyle.Regular, GraphicsUnit.Point);
             trayMenu.Opening += TrayMenuOpening;
 
-            statusItem = new ToolStripMenuItem("Mantener activo: apagado");
+            statusItem = new ToolStripMenuItem("Pulso: apagado");
             statusItem.Enabled = false;
             statusItem.Font = new Font(trayMenu.Font, FontStyle.Bold);
             trayMenu.Items.Add(statusItem);
@@ -97,9 +105,14 @@ namespace Raudo
             notifyIcon = new NotifyIcon();
             notifyIcon.ContextMenuStrip = trayMenu;
             notifyIcon.Icon = idleIcon;
-            notifyIcon.Text = "Raudo · Mantener activo apagado";
+            notifyIcon.Text = "Raudo · Pulso apagado";
             notifyIcon.Visible = true;
             notifyIcon.MouseClick += NotifyIconMouseClick;
+            notifyIcon.BalloonTipClicked += NotifyIconBalloonTipClicked;
+
+            reminderRetryTimer = new System.Windows.Forms.Timer();
+            reminderRetryTimer.Interval = 5000;
+            reminderRetryTimer.Tick += ReminderRetryTimerTick;
 
             dispatcher = new Control();
             IntPtr dispatcherHandle = dispatcher.Handle;
@@ -198,6 +211,52 @@ namespace Raudo
         private void MiniModeChanged(object sender, MiniModeChangedEventArgs eventArgs)
         {
             SetMiniMode(eventArgs.Enabled, true);
+        }
+
+        private void MainFormMinimizeRequested(
+            object sender,
+            MinimizeRequestedEventArgs eventArgs)
+        {
+            if (!settings.MiniModeEnabled || miniForm == null || !miniForm.Visible)
+            {
+                return;
+            }
+
+            eventArgs.Handled = true;
+            if (minimizeTransition != null)
+            {
+                minimizeTransition.Cancel();
+                minimizeTransition = null;
+            }
+
+            if (!MotionSettings.ClientAreaAnimationsEnabled())
+            {
+                form.HideToTrayImmediately();
+                miniForm.PulseLanding();
+                return;
+            }
+
+            minimizeTransition = ConnectedMinimizeTransition.Start(
+                form,
+                miniForm.Bounds,
+                delegate
+                {
+                    minimizeTransition = null;
+                    if (miniForm != null && !miniForm.IsDisposed)
+                    {
+                        miniForm.PulseLanding();
+                    }
+                });
+            if (minimizeTransition == null)
+            {
+                form.HideToTrayImmediately();
+                miniForm.PulseLanding();
+            }
+        }
+
+        private void MainFormUpdateRestartRequested(object sender, EventArgs eventArgs)
+        {
+            ExitThread();
         }
 
         private void MiniModeMenuItemClick(object sender, EventArgs eventArgs)
@@ -300,7 +359,46 @@ namespace Raudo
 
         private void KeepActiveServiceStateChanged(object sender, EventArgs eventArgs)
         {
+            if (keepActiveService.Phase != observedPhase)
+            {
+                ClearPendingReminder();
+                observedPhase = keepActiveService.Phase;
+            }
+
             UpdatePresentation();
+        }
+
+        private void KeepActiveServiceAttentionRequired(
+            object sender,
+            KeepActiveAttentionEventArgs eventArgs)
+        {
+            if (miniForm != null)
+            {
+                miniForm.PulseAttention();
+            }
+
+            TryShowReminder(eventArgs.Phase);
+        }
+
+        private void NotifyIconBalloonTipClicked(object sender, EventArgs eventArgs)
+        {
+            ShowWindow();
+        }
+
+        private void ReminderRetryTimerTick(object sender, EventArgs eventArgs)
+        {
+            if (!pendingReminder.HasValue || DateTime.UtcNow >= pendingReminderExpiresUtc)
+            {
+                ClearPendingReminder();
+                return;
+            }
+
+            if (ShellUserState.AcceptsNotifications(ShellUserState.Current()))
+            {
+                KeepActivePhase phase = pendingReminder.Value;
+                ClearPendingReminder();
+                ShowReminder(phase);
+            }
         }
 
         private void SystemSessionSwitch(object sender, SessionSwitchEventArgs eventArgs)
@@ -407,10 +505,10 @@ namespace Raudo
             string durationLabel = DurationOption.GetLabel(settings.DurationMinutes);
 
             notifyIcon.Icon = active ? activeIcon : idleIcon;
-            statusItem.Text = active ? "Mantener activo: encendido" : "Mantener activo: apagado";
+            statusItem.Text = active ? "Pulso: encendido" : "Pulso: apagado";
             toggleItem.Text = active
-                ? "Detener"
-                : "Activar por " + durationLabel.ToLowerInvariant();
+                ? "Detener Pulso"
+                : "Iniciar Pulso por " + durationLabel.ToLowerInvariant();
             durationMenu.Enabled = !active;
 
             foreach (ToolStripItem rawItem in durationMenu.DropDownItems)
@@ -425,17 +523,17 @@ namespace Raudo
             if (active)
             {
                 TimeSpan remaining = keepActiveService.GetRemaining() ?? TimeSpan.Zero;
-                notifyIcon.Text = LimitTooltip("Raudo · Activo · " + FormatRemaining(remaining));
+                notifyIcon.Text = LimitTooltip("Raudo · Pulso · " + FormatRemaining(remaining));
             }
             else
             {
-                notifyIcon.Text = "Raudo · Mantener activo apagado";
+                notifyIcon.Text = "Raudo · Pulso apagado";
             }
 
             form.RefreshState();
             if (miniForm != null)
             {
-                miniForm.SetActive(active);
+                miniForm.SetSessionPhase(keepActiveService.Phase);
             }
         }
 
@@ -449,7 +547,7 @@ namespace Raudo
                 miniForm.PinHelpRequested += MiniPinHelpRequested;
                 miniForm.PositionChangedByUser += MiniPositionChangedByUser;
                 miniForm.ApplyTheme(ThemeService.Current());
-                miniForm.SetActive(keepActiveService.IsActive);
+                miniForm.SetSessionPhase(keepActiveService.Phase);
             }
 
             miniForm.ShowMini();
@@ -511,6 +609,62 @@ namespace Raudo
                 MessageBoxIcon.Information);
         }
 
+        private void TryShowReminder(KeepActivePhase phase)
+        {
+            if (phase != KeepActivePhase.EndingSoon
+                && phase != KeepActivePhase.Critical
+                && phase != KeepActivePhase.Completed)
+            {
+                return;
+            }
+
+            if (ShellUserState.AcceptsNotifications(ShellUserState.Current()))
+            {
+                ClearPendingReminder();
+                ShowReminder(phase);
+                return;
+            }
+
+            pendingReminder = phase;
+            pendingReminderExpiresUtc = DateTime.UtcNow.AddMinutes(20);
+            reminderRetryTimer.Stop();
+            reminderRetryTimer.Start();
+        }
+
+        private void ShowReminder(KeepActivePhase phase)
+        {
+            string title;
+            string message;
+            ToolTipIcon icon;
+            if (phase == KeepActivePhase.EndingSoon)
+            {
+                title = "Raudo · Pulso: 15 minutos";
+                message = "Pulso terminará pronto. Abre Raudo si necesitas extender el tiempo.";
+                icon = ToolTipIcon.Info;
+            }
+            else if (phase == KeepActivePhase.Critical)
+            {
+                title = "Raudo · Pulso: 5 minutos";
+                message = "Pulso está por terminar. Abre Raudo para elegir otra duración.";
+                icon = ToolTipIcon.Warning;
+            }
+            else
+            {
+                title = "Raudo · Pulso finalizó";
+                message = "El equipo vuelve a su comportamiento normal.";
+                icon = ToolTipIcon.Warning;
+            }
+
+            notifyIcon.ShowBalloonTip(6000, title, message, icon);
+        }
+
+        private void ClearPendingReminder()
+        {
+            reminderRetryTimer.Stop();
+            pendingReminder = null;
+            pendingReminderExpiresUtc = DateTime.MinValue;
+        }
+
         private static string FormatRemaining(TimeSpan remaining)
         {
             if (remaining.TotalHours >= 1)
@@ -538,6 +692,16 @@ namespace Raudo
             SystemEvents.PowerModeChanged -= SystemPowerModeChanged;
             SystemEvents.UserPreferenceChanged -= SystemUserPreferenceChanged;
             SystemEvents.DisplaySettingsChanged -= SystemDisplaySettingsChanged;
+            keepActiveService.StateChanged -= KeepActiveServiceStateChanged;
+            keepActiveService.AttentionRequired -= KeepActiveServiceAttentionRequired;
+            form.MinimizeRequested -= MainFormMinimizeRequested;
+            form.UpdateRestartRequested -= MainFormUpdateRestartRequested;
+            reminderRetryTimer.Stop();
+            if (minimizeTransition != null)
+            {
+                minimizeTransition.Cancel();
+                minimizeTransition = null;
+            }
             notifyIcon.Visible = false;
             keepActiveService.Dispose();
             DestroyMiniForm();
@@ -545,7 +709,9 @@ namespace Raudo
             form.AllowCloseAndClose();
             showRequestRegistration.Unregister(null);
             dispatcher.Dispose();
+            reminderRetryTimer.Dispose();
             trayMenu.Dispose();
+            notifyIcon.BalloonTipClicked -= NotifyIconBalloonTipClicked;
             notifyIcon.Dispose();
             activeIcon.Dispose();
             idleIcon.Dispose();
