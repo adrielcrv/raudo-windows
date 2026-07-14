@@ -8,10 +8,11 @@ USO
 2. Presiona Ctrl + Alt + Espacio para abrir Salto y buscar una ventana,
    aplicación, carpeta conocida o acción, realizar un cálculo local o usar un
    control multimedia.
-3. Elige una duración e inicia Pulso cuando lo necesites.
-4. Cierra la ventana para conservar Raudo junto al reloj.
-5. Activa Modo Mini para navegar entre escritorios y traer ventanas.
-6. Usa Salir de Raudo en el menú de la bandeja para terminar el proceso.
+3. Presiona Ctrl + Alt + V para decir una orden local en español.
+4. Elige una duración e inicia Pulso cuando lo necesites.
+5. Cierra la ventana para conservar Raudo junto al reloj.
+6. Activa Modo Mini para navegar entre escritorios y traer ventanas.
+7. Usa Salir de Raudo en el menú de la bandeja para terminar el proceso.
 
 SALTO
 
@@ -36,6 +37,17 @@ bandeja. Los comandos utilizan las teclas multimedia estándar de Windows; la
 aplicación que responde decide cómo aplicarlos. Raudo no inspecciona sesiones,
 reproductores, títulos ni contenido.
 
+VOZ
+
+Ctrl + Alt + V inicia una escucha explícita mediante el reconocimiento de voz
+de Windows y una gramática local de órdenes en español. Raudo puede abrir
+aplicaciones, controlar Pulso y multimedia, recortar pantalla, crear o cambiar
+escritorios, calcular y convertir unidades. Si no entiende la primera orden,
+vuelve a escuchar una vez. No mantiene escucha en segundo plano, palabra de
+activación, historial, grabaciones o envío de voz a servicios remotos. Requiere
+un idioma de voz en español instalado y permiso de micrófono para aplicaciones
+de escritorio.
+
 MODO MINI
 
 Raudo Mini se recoge como una pestaña estrecha en el borde de la pantalla. Al
@@ -52,12 +64,15 @@ Windows decide qué reproductor recibe el comando.
 La pestaña sigue automáticamente al escritorio activo. Si una versión de
 Windows no permite esta función, Raudo muestra la alternativa mediante Win + Tab.
 
-Raudo inicia siempre apagado, se detiene al bloquear o suspender Windows y no
-requiere permisos de administrador. La única conexión de red ocurre cuando el
-usuario selecciona Buscar actualizaciones. En una instalación local, Raudo puede
-descargar el paquete oficial después de una confirmación, validar su versión y
-sus sumas SHA-256, instalarlo de forma atómica y reiniciarse. Las copias
-portables conservan la actualización manual desde la publicación oficial.
+Pulso inicia apagado salvo cuando Raudo recupera una sesión vigente después de
+un reinicio o actualización; conserva el vencimiento original y se detiene al
+bloquear o suspender Windows. Raudo no requiere permisos de administrador. La
+única conexión directa de red ocurre cuando el usuario selecciona Buscar
+actualizaciones. Las órdenes para YouTube o clima abren el navegador
+predeterminado. En una instalación local, Raudo puede descargar el paquete
+oficial después de una confirmación, validar su versión y sus sumas SHA-256,
+instalarlo de forma atómica y reiniciarse. Las copias portables conservan la
+actualización manual desde la publicación oficial.
 
 Proyecto oficial: https://github.com/adrielcrv/raudo-windows
 
