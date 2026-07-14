@@ -46,9 +46,10 @@ Raudo reúne utilidades locales y ligeras para Windows en una aplicación de ban
 ### Multimedia
 
 - Ofrece reproducir o pausar, pista anterior, pista siguiente, silenciar, bajar volumen y subir volumen.
-- Está disponible al buscar en Salto o desde el submenú **Multimedia** de la bandeja.
+- Está disponible directamente en Modo Mini, al buscar en Salto o desde el submenú **Multimedia** de la bandeja.
 - Envía un comando multimedia estándar a Windows; la aplicación que responde a las teclas multimedia decide cómo aplicarlo.
-- No inspecciona sesiones, reproductores, pestañas, títulos, contenido, progreso ni carátulas.
+- Desde las opciones de Mini puede elegir entre las sesiones que Windows expone y volver al control automático.
+- La selección consulta únicamente el nombre de la aplicación y su estado de reproducción; no inspecciona pestañas, títulos, contenido, progreso ni carátulas.
 
 ### Recortar pantalla
 
@@ -59,6 +60,9 @@ Abre la Herramienta Recortes mediante el protocolo `ms-screenclip` incluido en W
 - Se recoge como un control de borde compacto que permanece visible sin invadir el contenido.
 - Se revela y se recoge con una transición breve que respeta la preferencia de animaciones de Windows.
 - Al minimizar la ventana principal, una transición conectada confirma visualmente su llegada a Mini.
+- Ofrece pista anterior, reproducción o pausa y pista siguiente con un clic, sin escribir una búsqueda.
+- Mantiene los controles de escritorio en los extremos y omite direcciones o pistas que no están disponibles.
+- Reúne selección de reproductor, volumen, ventanas y opciones adicionales en un menú secundario.
 - Sigue automáticamente al escritorio activo y permanece siempre encima.
 - Reduce su presencia durante pantalla completa y presentaciones, sin perder el área de interacción.
 - Muestra únicamente las direcciones de escritorio que están disponibles.
@@ -77,7 +81,7 @@ La detección de ventanas utiliza la interfaz pública `IVirtualDesktopManager`.
 
 ## Privacidad y red
 
-Raudo no incluye telemetría, cuentas ni publicidad. Las búsquedas de Salto permanecen en memoria y se utilizan únicamente para filtrar resultados o producir un cálculo o conversión local. El catálogo de aplicaciones se consulta a Windows bajo demanda; Raudo no recorre el disco ni conserva las consultas. Un resultado sólo se escribe en el portapapeles después de seleccionarlo. Los controles multimedia envían comandos fijos sin leer el reproductor ni su contenido. Raudo sólo se conecta a Internet cuando el usuario selecciona **Buscar actualizaciones**. En una instalación local, puede descargar el paquete oficial después de una confirmación, validar su versión y sus sumas SHA-256, reemplazar el ejecutable de forma atómica y reiniciarse. Una copia portable abre la publicación para actualización manual.
+Raudo no incluye telemetría, cuentas ni publicidad. Las búsquedas de Salto permanecen en memoria y se utilizan únicamente para filtrar resultados o producir un cálculo o conversión local. El catálogo de aplicaciones se consulta a Windows bajo demanda; Raudo no recorre el disco ni conserva las consultas. Un resultado sólo se escribe en el portapapeles después de seleccionarlo. Los controles multimedia automáticos envían comandos fijos; al abrir el selector de Mini, Raudo consulta localmente las sesiones que Windows expone y conserva de forma transitoria el nombre de la aplicación y su estado. Raudo sólo se conecta a Internet cuando el usuario selecciona **Buscar actualizaciones**. En una instalación local, puede descargar el paquete oficial después de una confirmación, validar su versión y sus sumas SHA-256, reemplazar el ejecutable de forma atómica y reiniciarse. Una copia portable abre la publicación para actualización manual.
 
 Consulta [PRIVACY.md](PRIVACY.md) para conocer los datos locales y el comportamiento de red.
 
@@ -118,6 +122,8 @@ Generar el ZIP portable y sus hashes:
 ```
 
 El build local utiliza el compilador de .NET Framework incluido en Windows. `Raudo.sln` permite compilar el mismo código con Visual Studio o MSBuild.
+
+La primera compilación restaura desde NuGet los contratos oficiales `Microsoft.Windows.SDK.Contracts` 10.0.19041.2 y valida una suma SHA-256 fijada antes de usarlos. Son referencias de compilación y no se incluyen en el ZIP de Raudo.
 
 ## Uso responsable
 

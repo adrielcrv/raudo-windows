@@ -4,6 +4,17 @@ Este proyecto utiliza versionado semántico.
 
 ## [Sin publicar]
 
+## [1.6.0] - 2026-07-13
+
+- Modo Mini incorpora controles directos de pista anterior, reproducción o pausa y pista siguiente sin abrir Salto.
+- Los controles de escritorios permanecen en los extremos y utilizan iconos diferenciados de los controles de pista.
+- Selector bajo demanda para dirigir la reproducción a las sesiones multimedia que Windows expone, con retorno seguro al control automático.
+- Mini omite acciones de pista que el reproductor seleccionado declara como no disponibles.
+- Menú secundario unificado para elegir reproductor, ajustar el volumen global, traer ventanas y abrir opciones de Raudo.
+- Consulta local limitada al nombre de la aplicación y estado de reproducción; sin títulos, contenido, direcciones, carátulas, historial o sondeo periódico.
+- Contratos oficiales de Windows restaurados únicamente durante la compilación con versión y suma SHA-256 fijadas, sin nuevas DLL en el paquete.
+- Validación ampliada para temas, alto contraste, escalado al 150%, selección de sesiones y consumo en reposo.
+
 ## [1.5.0] - 2026-07-13
 
 - Seis controles multimedia fijos para reproducir o pausar, cambiar de pista, silenciar y ajustar el volumen de Windows.

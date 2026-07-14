@@ -41,6 +41,8 @@ if ($Clean -and (Test-Path -LiteralPath $artifactsPath)) {
 
 New-Item -ItemType Directory -Path $artifactsPath -Force | Out-Null
 New-Item -ItemType Directory -Path $assetsPath -Force | Out-Null
+$windowsContractsPath = & (Join-Path $PSScriptRoot 'RestoreWindowsContracts.ps1') `
+    -ArtifactsPath $artifactsPath
 
 try {
     & $compiler `
@@ -108,8 +110,13 @@ else {
         '/reference:System.Drawing.dll',
         '/reference:System.IO.Compression.dll',
         '/reference:System.IO.Compression.FileSystem.dll',
+        '/reference:System.Runtime.dll',
+        '/reference:System.Runtime.WindowsRuntime.dll',
         '/reference:System.Windows.Forms.dll',
         '/reference:System.Web.Extensions.dll',
+        "/reference:$windowsContractsPath\Windows.WinMD",
+        "/reference:$windowsContractsPath\Windows.Foundation.FoundationContract.winmd",
+        "/reference:$windowsContractsPath\Windows.Foundation.UniversalApiContract.winmd",
         "/win32icon:$iconPath",
         "/win32manifest:$manifestPath",
         "/out:$outputPath"
@@ -133,8 +140,13 @@ if (Test-Path -LiteralPath $testSource) {
         /reference:System.Drawing.dll `
         /reference:System.IO.Compression.dll `
         /reference:System.IO.Compression.FileSystem.dll `
+        /reference:System.Runtime.dll `
+        /reference:System.Runtime.WindowsRuntime.dll `
         /reference:System.Windows.Forms.dll `
         /reference:System.Web.Extensions.dll `
+        "/reference:$windowsContractsPath\Windows.WinMD" `
+        "/reference:$windowsContractsPath\Windows.Foundation.FoundationContract.winmd" `
+        "/reference:$windowsContractsPath\Windows.Foundation.UniversalApiContract.winmd" `
         "/reference:$outputPath" `
         "/out:$testOutputPath" `
         $testSource

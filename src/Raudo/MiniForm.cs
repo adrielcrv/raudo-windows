@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace Raudo
@@ -23,10 +24,14 @@ namespace Raudo
         private const int ControlHeight = 48;
         private const int ArrowZoneWidth = 48;
         private const int CenterZoneWidth = 48;
+        private const int TrackZoneWidth = 40;
+        private const int MoreZoneWidth = 40;
         private const uint SetWindowPosNoZOrder = 0x0004;
         private const uint SetWindowPosNoActivate = 0x0010;
 
         private readonly VirtualDesktopService desktopService;
+        private readonly IMediaSessionService mediaSessionService;
+        private readonly bool ownsMediaSessionService;
         private readonly ContextMenuStrip windowMenu;
         private readonly Font windowMenuHeaderFont;
         private readonly Timer revealTimer;
@@ -66,14 +71,45 @@ namespace Raudo
         private double opacityStart;
         private double opacityTarget;
         private long opacityStartTimestamp;
+        private bool mediaCommandPending;
+        private bool menuOpening;
+        private int testingDpi;
 
         public MiniForm(VirtualDesktopService service, RaudoSettings settings)
+            : this(service, settings, new MediaControlService(), null)
         {
+        }
+
+        internal MiniForm(
+            VirtualDesktopService service,
+            RaudoSettings settings,
+            MediaControlService mediaControlService,
+            IMediaSessionService sessionService)
+        {
+            if (service == null)
+            {
+                throw new ArgumentNullException("service");
+            }
+            if (mediaControlService == null)
+            {
+                throw new ArgumentNullException("mediaControlService");
+            }
+
             desktopService = service;
+            if (sessionService == null)
+            {
+                mediaSessionService = new MediaSessionService(mediaControlService);
+                ownsMediaSessionService = true;
+            }
+            else
+            {
+                mediaSessionService = sessionService;
+                ownsMediaSessionService = false;
+            }
 
             Text = "Raudo Mini";
             AccessibleName = "Modo Mini de Raudo";
-            AccessibleDescription = "Navega entre escritorios y trae ventanas al escritorio actual.";
+            AccessibleDescription = "Controla reproducción, navega entre escritorios y abre opciones de Raudo.";
             AutoScaleMode = AutoScaleMode.Dpi;
             FormBorderStyle = FormBorderStyle.None;
             ClientSize = new Size(EdgeWidth, ControlHeight);
@@ -251,6 +287,36 @@ namespace Raudo
             UpdateWindowOpacity(false);
         }
 
+        internal void RefreshMediaStateForTesting()
+        {
+            ApplyMediaSelectionChange();
+        }
+
+        internal void ExecuteMediaCommandForTesting(MediaCommand command)
+        {
+            ExecuteMediaCommand(command);
+        }
+
+        internal void SetDpiForTesting(int dpi)
+        {
+            testingDpi = Math.Max(96, dpi);
+            ApplyRevealProgress(revealProgress);
+        }
+
+        internal IList<string> BuildMenuLabelsForTesting(MediaSessionSnapshot snapshot)
+        {
+            BuildWindowMenu(snapshot);
+            List<string> labels = new List<string>();
+            foreach (ToolStripItem item in windowMenu.Items)
+            {
+                if (!string.IsNullOrWhiteSpace(item.Text))
+                {
+                    labels.Add(item.Text);
+                }
+            }
+            return labels;
+        }
+
         internal double WindowOpacityForTesting
         {
             get { return Opacity; }
@@ -320,20 +386,26 @@ namespace Raudo
                 return;
             }
 
-            if (canNavigateLeft && GetZoneBounds(MiniHitZone.Left).Right <= ClientSize.Width)
+            if (canNavigateLeft
+                && GetZoneBounds(MiniHitZone.DesktopLeft).Right <= ClientSize.Width)
             {
-                DrawHitZone(eventArgs.Graphics, MiniHitZone.Left);
+                DrawHitZone(eventArgs.Graphics, MiniHitZone.DesktopLeft);
                 DrawArrow(eventArgs.Graphics, true, contentOpacity);
             }
 
-            if (canNavigateRight && GetZoneBounds(MiniHitZone.Right).Right <= ClientSize.Width)
+            if (mediaSessionService.CanPrevious
+                && GetZoneBounds(MiniHitZone.MediaPrevious).Right <= ClientSize.Width)
             {
-                DrawHitZone(eventArgs.Graphics, MiniHitZone.Right);
-                DrawArrow(eventArgs.Graphics, false, contentOpacity);
+                DrawHitZone(eventArgs.Graphics, MiniHitZone.MediaPrevious);
+                DrawMediaGlyph(
+                    eventArgs.Graphics,
+                    MiniHitZone.MediaPrevious,
+                    RaudoActionGlyph.MediaPrevious,
+                    contentOpacity);
             }
 
             int markSize = ScaleLogical(32);
-            Rectangle centerBounds = GetZoneBounds(MiniHitZone.Center);
+            Rectangle centerBounds = GetZoneBounds(MiniHitZone.MediaPlayPause);
             Rectangle markBounds = new Rectangle(
                 centerBounds.Left + (centerBounds.Width - markSize) / 2,
                 (ClientSize.Height - markSize) / 2,
@@ -341,11 +413,38 @@ namespace Raudo
                 markSize);
             if (markBounds.Right <= ClientSize.Width)
             {
-                BrandDrawing.DrawMark(
+                DrawHitZone(eventArgs.Graphics, MiniHitZone.MediaPlayPause);
+                DrawPrimaryMediaControl(
                     eventArgs.Graphics,
                     markBounds,
-                    WithAlpha(accent, contentOpacity),
-                    WithAlpha(Color.White, contentOpacity));
+                    accent,
+                    contentOpacity,
+                    progress);
+            }
+
+            if (mediaSessionService.CanNext
+                && GetZoneBounds(MiniHitZone.MediaNext).Right <= ClientSize.Width)
+            {
+                DrawHitZone(eventArgs.Graphics, MiniHitZone.MediaNext);
+                DrawMediaGlyph(
+                    eventArgs.Graphics,
+                    MiniHitZone.MediaNext,
+                    RaudoActionGlyph.MediaNext,
+                    contentOpacity);
+            }
+
+            if (GetZoneBounds(MiniHitZone.More).Right <= ClientSize.Width)
+            {
+                DrawHitZone(eventArgs.Graphics, MiniHitZone.More);
+                DrawMoreGlyph(eventArgs.Graphics, contentOpacity);
+                DrawSelectedSourceIndicator(eventArgs.Graphics, contentOpacity);
+            }
+
+            if (canNavigateRight
+                && GetZoneBounds(MiniHitZone.DesktopRight).Right <= ClientSize.Width)
+            {
+                DrawHitZone(eventArgs.Graphics, MiniHitZone.DesktopRight);
+                DrawArrow(eventArgs.Graphics, false, contentOpacity);
             }
 
             DrawExpandedSessionIndicator(eventArgs.Graphics, contentOpacity, markBounds);
@@ -385,7 +484,8 @@ namespace Raudo
             base.OnMouseMove(eventArgs);
 
             if (eventArgs.Button == MouseButtons.Left
-                && pressedZone == MiniHitZone.Center)
+                && (pressedZone == MiniHitZone.Edge
+                    || pressedZone == MiniHitZone.MediaPlayPause))
             {
                 Point cursor = Cursor.Position;
                 if (!dragging
@@ -408,12 +508,11 @@ namespace Raudo
             if (hoverZone != nextZone)
             {
                 hoverZone = nextZone;
+                toolTip.SetToolTip(this, GetZoneTooltip(nextZone));
                 Invalidate();
             }
 
-            Cursor = nextZone == MiniHitZone.Center && revealProgress >= 0.98D
-                ? Cursors.SizeAll
-                : Cursors.Hand;
+            Cursor = Cursors.Hand;
         }
 
         protected override void OnMouseDown(MouseEventArgs eventArgs)
@@ -464,15 +563,31 @@ namespace Raudo
             }
             else if (releasedZone == pressedZone)
             {
-                if (releasedZone == MiniHitZone.Left)
+                if (releasedZone == MiniHitZone.Edge)
+                {
+                    SetExpanded(true);
+                }
+                else if (releasedZone == MiniHitZone.DesktopLeft)
                 {
                     SwitchDesktop(DesktopDirection.Left);
                 }
-                else if (releasedZone == MiniHitZone.Right)
+                else if (releasedZone == MiniHitZone.DesktopRight)
                 {
                     SwitchDesktop(DesktopDirection.Right);
                 }
-                else
+                else if (releasedZone == MiniHitZone.MediaPrevious)
+                {
+                    ExecuteMediaCommand(MediaCommand.PreviousTrack);
+                }
+                else if (releasedZone == MiniHitZone.MediaPlayPause)
+                {
+                    ExecuteMediaCommand(MediaCommand.TogglePlayPause);
+                }
+                else if (releasedZone == MiniHitZone.MediaNext)
+                {
+                    ExecuteMediaCommand(MediaCommand.NextTrack);
+                }
+                else if (releasedZone == MiniHitZone.More)
                 {
                     ShowWindowMenu();
                 }
@@ -485,7 +600,23 @@ namespace Raudo
         protected override void OnKeyDown(KeyEventArgs eventArgs)
         {
             base.OnKeyDown(eventArgs);
-            if (eventArgs.KeyCode == Keys.Left)
+            if (eventArgs.Control && eventArgs.KeyCode == Keys.Left)
+            {
+                if (mediaSessionService.CanPrevious)
+                {
+                    ExecuteMediaCommand(MediaCommand.PreviousTrack);
+                }
+                eventArgs.Handled = true;
+            }
+            else if (eventArgs.Control && eventArgs.KeyCode == Keys.Right)
+            {
+                if (mediaSessionService.CanNext)
+                {
+                    ExecuteMediaCommand(MediaCommand.NextTrack);
+                }
+                eventArgs.Handled = true;
+            }
+            else if (eventArgs.KeyCode == Keys.Left)
             {
                 if (canNavigateLeft)
                 {
@@ -501,7 +632,14 @@ namespace Raudo
                 }
                 eventArgs.Handled = true;
             }
-            else if (eventArgs.KeyCode == Keys.Enter || eventArgs.KeyCode == Keys.Space)
+            else if (eventArgs.KeyCode == Keys.Space)
+            {
+                ExecuteMediaCommand(MediaCommand.TogglePlayPause);
+                eventArgs.Handled = true;
+            }
+            else if (eventArgs.KeyCode == Keys.Enter
+                || eventArgs.KeyCode == Keys.Apps
+                || (eventArgs.Shift && eventArgs.KeyCode == Keys.F10))
             {
                 ShowWindowMenu();
                 eventArgs.Handled = true;
@@ -545,6 +683,10 @@ namespace Raudo
                 ClearWindowMenuItems();
                 windowMenu.Dispose();
                 windowMenuHeaderFont.Dispose();
+                if (ownsMediaSessionService)
+                {
+                    mediaSessionService.Dispose();
+                }
             }
 
             base.Dispose(disposing);
@@ -574,66 +716,91 @@ namespace Raudo
             navigationRefreshTimer.Start();
         }
 
-        private void ShowWindowMenu()
+        private async void ShowWindowMenu()
         {
+            if (menuOpening || windowMenu.Visible || IsDisposed || Disposing)
+            {
+                return;
+            }
+
+            menuOpening = true;
             SetExpanded(true, false);
             collapseTimer.Stop();
-            BuildWindowMenu();
-            windowMenu.Show(this, new Point(ClientSize.Width / 2, ClientSize.Height));
-            UpdateWindowOpacity();
+            Cursor = Cursors.WaitCursor;
+            try
+            {
+                MediaSessionSnapshot snapshot = await mediaSessionService.GetSnapshotAsync();
+                if (IsDisposed || Disposing)
+                {
+                    return;
+                }
+
+                BuildWindowMenu(snapshot);
+                windowMenu.Show(this, new Point(ClientSize.Width / 2, ClientSize.Height));
+                UpdateWindowOpacity();
+            }
+            finally
+            {
+                menuOpening = false;
+                Cursor = Cursors.Hand;
+                Invalidate();
+            }
         }
 
-        private void BuildWindowMenu()
+        private void BuildWindowMenu(MediaSessionSnapshot snapshot)
         {
             ClearWindowMenuItems();
 
-            ToolStripMenuItem header = new ToolStripMenuItem("Ventanas en otros escritorios");
-            header.Enabled = false;
-            header.Font = windowMenuHeaderFont;
-            windowMenu.Items.Add(header);
+            ToolStripMenuItem mediaHeader = new ToolStripMenuItem("Reproductor");
+            mediaHeader.Enabled = false;
+            mediaHeader.Font = windowMenuHeaderFont;
+            windowMenu.Items.Add(mediaHeader);
 
-            IList<DesktopWindow> windows;
-            string error;
-            if (!desktopService.TryGetWindowsOutsideCurrentDesktop(out windows, out error))
+            ToolStripMenuItem automatic = new ToolStripMenuItem("Automático de Windows");
+            automatic.Checked = !mediaSessionService.HasSelectedSession;
+            automatic.ToolTipText = "Windows decide qué reproductor recibe el comando";
+            automatic.Click += AutomaticSessionItemClick;
+            windowMenu.Items.Add(automatic);
+
+            if (snapshot.IsAvailable && snapshot.Sessions.Count > 0)
             {
-                ToolStripMenuItem unavailable = new ToolStripMenuItem(error);
-                unavailable.Enabled = false;
-                windowMenu.Items.Add(unavailable);
-            }
-            else if (!desktopService.CanBringWindows)
-            {
-                ToolStripMenuItem unavailable = new ToolStripMenuItem(
-                    "Esta versión de Windows requiere usar Win + Tab");
-                unavailable.Enabled = false;
-                windowMenu.Items.Add(unavailable);
-            }
-            else if (windows.Count == 0)
-            {
-                ToolStripMenuItem empty = new ToolStripMenuItem("No hay ventanas para traer");
-                empty.Enabled = false;
-                windowMenu.Items.Add(empty);
+                for (int index = 0; index < snapshot.Sessions.Count; index++)
+                {
+                    MediaSessionDescriptor descriptor = snapshot.Sessions[index];
+                    string label = descriptor.MenuLabel
+                        + (descriptor.IsCurrent ? " · actual" : string.Empty);
+                    ToolStripMenuItem sessionItem = new ToolStripMenuItem(label);
+                    sessionItem.Tag = descriptor.Id;
+                    sessionItem.Checked = descriptor.IsSelected;
+                    sessionItem.Enabled = descriptor.CanPlayPause;
+                    sessionItem.ToolTipText = "Controlar esta sesión multimedia";
+                    sessionItem.Click += MediaSessionItemClick;
+                    windowMenu.Items.Add(sessionItem);
+                }
             }
             else
             {
-                int count = Math.Min(15, windows.Count);
-                for (int index = 0; index < count; index++)
-                {
-                    DesktopWindow candidate = windows[index];
-                    ToolStripMenuItem item = new ToolStripMenuItem(candidate.DisplayName);
-                    item.Tag = candidate.Handle;
-                    item.ToolTipText = "Traer al escritorio actual";
-                    item.Click += WindowItemClick;
-                    windowMenu.Items.Add(item);
-                }
-
-                if (windows.Count > count)
-                {
-                    ToolStripMenuItem remainder = new ToolStripMenuItem(
-                        string.Format("{0} ventanas más no mostradas", windows.Count - count));
-                    remainder.Enabled = false;
-                    windowMenu.Items.Add(remainder);
-                }
+                ToolStripMenuItem unavailable = new ToolStripMenuItem(
+                    snapshot.IsAvailable
+                        ? "No hay reproductores disponibles"
+                        : "Selección de reproductor no disponible");
+                unavailable.Enabled = false;
+                unavailable.ToolTipText = snapshot.Error;
+                windowMenu.Items.Add(unavailable);
             }
+
+            ToolStripMenuItem volume = new ToolStripMenuItem("Volumen de Windows");
+            AddMiniMediaMenuItem(volume, "Silenciar o restaurar audio", MediaCommand.ToggleMute);
+            volume.DropDownItems.Add(new ToolStripSeparator());
+            AddMiniMediaMenuItem(volume, "Bajar volumen", MediaCommand.VolumeDown);
+            AddMiniMediaMenuItem(volume, "Subir volumen", MediaCommand.VolumeUp);
+            windowMenu.Items.Add(volume);
+
+            windowMenu.Items.Add(new ToolStripSeparator());
+
+            ToolStripMenuItem windowsMenu = new ToolStripMenuItem("Traer ventana");
+            BuildWindowItems(windowsMenu);
+            windowMenu.Items.Add(windowsMenu);
 
             windowMenu.Items.Add(new ToolStripSeparator());
 
@@ -683,6 +850,67 @@ namespace Raudo
             windowMenu.Items.Add(hide);
         }
 
+        private void BuildWindowItems(ToolStripMenuItem windowsMenu)
+        {
+            IList<DesktopWindow> windows;
+            string error;
+            if (!desktopService.TryGetWindowsOutsideCurrentDesktop(out windows, out error))
+            {
+                AddDisabledSubmenuItem(windowsMenu, error);
+                return;
+            }
+            if (!desktopService.CanBringWindows)
+            {
+                AddDisabledSubmenuItem(
+                    windowsMenu,
+                    "Esta versión de Windows requiere usar Win + Tab");
+                return;
+            }
+            if (windows.Count == 0)
+            {
+                AddDisabledSubmenuItem(windowsMenu, "No hay ventanas para traer");
+                return;
+            }
+
+            int count = Math.Min(15, windows.Count);
+            for (int index = 0; index < count; index++)
+            {
+                DesktopWindow candidate = windows[index];
+                ToolStripMenuItem item = new ToolStripMenuItem(candidate.DisplayName);
+                item.Tag = candidate.Handle;
+                item.ToolTipText = "Traer al escritorio actual";
+                item.Click += WindowItemClick;
+                windowsMenu.DropDownItems.Add(item);
+            }
+
+            if (windows.Count > count)
+            {
+                AddDisabledSubmenuItem(
+                    windowsMenu,
+                    string.Format("{0} ventanas más no mostradas", windows.Count - count));
+            }
+        }
+
+        private static void AddDisabledSubmenuItem(
+            ToolStripMenuItem parent,
+            string label)
+        {
+            ToolStripMenuItem item = new ToolStripMenuItem(label);
+            item.Enabled = false;
+            parent.DropDownItems.Add(item);
+        }
+
+        private void AddMiniMediaMenuItem(
+            ToolStripMenuItem parent,
+            string label,
+            MediaCommand command)
+        {
+            ToolStripMenuItem item = new ToolStripMenuItem(label);
+            item.Tag = command;
+            item.Click += MiniMediaMenuItemClick;
+            parent.DropDownItems.Add(item);
+        }
+
         private void ClearWindowMenuItems()
         {
             while (windowMenu.Items.Count > 0)
@@ -690,6 +918,72 @@ namespace Raudo
                 ToolStripItem item = windowMenu.Items[0];
                 windowMenu.Items.RemoveAt(0);
                 item.Dispose();
+            }
+        }
+
+        private void AutomaticSessionItemClick(object sender, EventArgs eventArgs)
+        {
+            mediaSessionService.SelectAutomatic();
+            ApplyMediaSelectionChange();
+        }
+
+        private void MediaSessionItemClick(object sender, EventArgs eventArgs)
+        {
+            ToolStripMenuItem item = sender as ToolStripMenuItem;
+            string id = item == null ? null : item.Tag as string;
+            if (!string.IsNullOrWhiteSpace(id) && mediaSessionService.TrySelect(id))
+            {
+                ApplyMediaSelectionChange();
+            }
+        }
+
+        private void MiniMediaMenuItemClick(object sender, EventArgs eventArgs)
+        {
+            ToolStripMenuItem item = sender as ToolStripMenuItem;
+            if (item != null && item.Tag is MediaCommand)
+            {
+                ExecuteMediaCommand((MediaCommand)item.Tag);
+            }
+        }
+
+        private void ApplyMediaSelectionChange()
+        {
+            if (expanded)
+            {
+                ApplyRevealProgress(revealProgress);
+            }
+            toolTip.SetToolTip(this, GetZoneTooltip(hoverZone));
+            Invalidate();
+        }
+
+        private async void ExecuteMediaCommand(MediaCommand command)
+        {
+            if (mediaCommandPending || IsDisposed || Disposing)
+            {
+                return;
+            }
+
+            mediaCommandPending = true;
+            Invalidate();
+            try
+            {
+                string error = await mediaSessionService.TryExecuteAsync(command);
+                if (!string.IsNullOrWhiteSpace(error) && !IsDisposed && !Disposing)
+                {
+                    toolTip.Show(
+                        error,
+                        this,
+                        new Point(ClientSize.Width / 2, ClientSize.Height),
+                        3200);
+                }
+            }
+            finally
+            {
+                mediaCommandPending = false;
+                if (!IsDisposed && !Disposing)
+                {
+                    Invalidate();
+                }
             }
         }
 
@@ -965,20 +1259,44 @@ namespace Raudo
         {
             if (!expanded || revealProgress < 0.98D)
             {
-                return MiniHitZone.Center;
+                return MiniHitZone.Edge;
             }
 
-            if (canNavigateLeft && GetZoneBounds(MiniHitZone.Left).Contains(point))
+            if (canNavigateLeft
+                && GetZoneBounds(MiniHitZone.DesktopLeft).Contains(point))
             {
-                return MiniHitZone.Left;
+                return MiniHitZone.DesktopLeft;
             }
 
-            if (canNavigateRight && GetZoneBounds(MiniHitZone.Right).Contains(point))
+            if (mediaSessionService.CanPrevious
+                && GetZoneBounds(MiniHitZone.MediaPrevious).Contains(point))
             {
-                return MiniHitZone.Right;
+                return MiniHitZone.MediaPrevious;
             }
 
-            return MiniHitZone.Center;
+            if (GetZoneBounds(MiniHitZone.MediaPlayPause).Contains(point))
+            {
+                return MiniHitZone.MediaPlayPause;
+            }
+
+            if (mediaSessionService.CanNext
+                && GetZoneBounds(MiniHitZone.MediaNext).Contains(point))
+            {
+                return MiniHitZone.MediaNext;
+            }
+
+            if (GetZoneBounds(MiniHitZone.More).Contains(point))
+            {
+                return MiniHitZone.More;
+            }
+
+            if (canNavigateRight
+                && GetZoneBounds(MiniHitZone.DesktopRight).Contains(point))
+            {
+                return MiniHitZone.DesktopRight;
+            }
+
+            return MiniHitZone.None;
         }
 
         private void DrawHitZone(Graphics graphics, MiniHitZone zone)
@@ -997,9 +1315,144 @@ namespace Raudo
             }
         }
 
+        private void DrawMediaGlyph(
+            Graphics graphics,
+            MiniHitZone zone,
+            RaudoActionGlyph glyph,
+            float opacity)
+        {
+            Rectangle area = GetZoneBounds(zone);
+            int size = ScaleLogical(20);
+            Rectangle glyphBounds = new Rectangle(
+                area.Left + (area.Width - size) / 2,
+                area.Top + (area.Height - size) / 2,
+                size,
+                size);
+            RaudoActionGlyphDrawing.Draw(
+                graphics,
+                glyphBounds,
+                glyph,
+                WithAlpha(palette.TextMuted, opacity));
+        }
+
+        private void DrawPrimaryMediaControl(
+            Graphics graphics,
+            Rectangle bounds,
+            Color accent,
+            float opacity,
+            float progress)
+        {
+            float mediaOpacity = Remap(progress, 0.62F, 1F);
+            float brandOpacity = opacity * (1F - mediaOpacity);
+            if (brandOpacity > 0.01F)
+            {
+                BrandDrawing.DrawMark(
+                    graphics,
+                    bounds,
+                    WithAlpha(accent, brandOpacity),
+                    WithAlpha(Color.White, brandOpacity));
+            }
+
+            if (mediaOpacity <= 0F)
+            {
+                return;
+            }
+
+            Color buttonColor = mediaCommandPending
+                ? BlendColor(accent, palette.SurfaceRaised, 0.24F)
+                : accent;
+            using (GraphicsPath tile = DrawingPaths.RoundedRectangle(
+                bounds,
+                Math.Max(2, bounds.Width / 4)))
+            using (SolidBrush fill = new SolidBrush(
+                WithAlpha(buttonColor, opacity * mediaOpacity)))
+            {
+                graphics.FillPath(fill, tile);
+            }
+
+            Rectangle glyphBounds = bounds;
+            glyphBounds.Inflate(-ScaleLogical(6), -ScaleLogical(6));
+            RaudoActionGlyphDrawing.Draw(
+                graphics,
+                glyphBounds,
+                RaudoActionGlyph.MediaPlayPause,
+                WithAlpha(Color.White, opacity * mediaOpacity));
+        }
+
+        private void DrawMoreGlyph(Graphics graphics, float opacity)
+        {
+            Rectangle zone = GetZoneBounds(MiniHitZone.More);
+            int dotSize = Math.Max(2, ScaleLogical(2));
+            int gap = ScaleLogical(5);
+            int totalWidth = (dotSize * 3) + (gap * 2);
+            int left = zone.Left + (zone.Width - totalWidth) / 2;
+            int top = zone.Top + (zone.Height - dotSize) / 2;
+            using (SolidBrush brush = new SolidBrush(WithAlpha(palette.TextMuted, opacity)))
+            {
+                for (int index = 0; index < 3; index++)
+                {
+                    graphics.FillEllipse(
+                        brush,
+                        left + (index * (dotSize + gap)),
+                        top,
+                        dotSize,
+                        dotSize);
+                }
+            }
+        }
+
+        private void DrawSelectedSourceIndicator(Graphics graphics, float opacity)
+        {
+            if (!mediaSessionService.HasSelectedSession)
+            {
+                return;
+            }
+
+            Rectangle zone = GetZoneBounds(MiniHitZone.More);
+            int size = ScaleLogical(5);
+            Rectangle dot = new Rectangle(
+                zone.Right - ScaleLogical(9),
+                zone.Top + ScaleLogical(8),
+                size,
+                size);
+            using (SolidBrush brush = new SolidBrush(
+                WithAlpha(palette.Active, opacity)))
+            {
+                graphics.FillEllipse(brush, dot);
+            }
+        }
+
+        private string GetZoneTooltip(MiniHitZone zone)
+        {
+            switch (zone)
+            {
+                case MiniHitZone.Edge:
+                    return "Mostrar controles de Raudo";
+                case MiniHitZone.DesktopLeft:
+                    return "Escritorio anterior";
+                case MiniHitZone.MediaPrevious:
+                    return "Pista anterior";
+                case MiniHitZone.MediaPlayPause:
+                    return mediaSessionService.HasSelectedSession
+                        ? "Reproducir o pausar · "
+                            + mediaSessionService.SelectedDisplayName
+                            + " · arrastra para mover"
+                        : "Reproducir o pausar · arrastra para mover";
+                case MiniHitZone.MediaNext:
+                    return "Pista siguiente";
+                case MiniHitZone.More:
+                    return "Elegir reproductor y abrir opciones";
+                case MiniHitZone.DesktopRight:
+                    return "Escritorio siguiente";
+                default:
+                    return GetSessionTooltip();
+            }
+        }
+
         private void DrawArrow(Graphics graphics, bool left, float opacity)
         {
-            Rectangle zone = GetZoneBounds(left ? MiniHitZone.Left : MiniHitZone.Right);
+            Rectangle zone = GetZoneBounds(
+                left ? MiniHitZone.DesktopLeft : MiniHitZone.DesktopRight);
             int centerX = zone.Left + zone.Width / 2;
             int centerY = ClientSize.Height / 2;
             int horizontal = ScaleLogical(4);
@@ -1162,32 +1615,67 @@ namespace Raudo
         {
             int arrowWidth = ScaleLogical(ArrowZoneWidth);
             int centerWidth = ScaleLogical(CenterZoneWidth);
+            int trackWidth = ScaleLogical(TrackZoneWidth);
+            int moreWidth = ScaleLogical(MoreZoneWidth);
             bool dockedLeft = IsDockedLeft(
                 dockAnchor,
                 Screen.FromPoint(dockAnchor).WorkingArea);
             int contentOffset = dockedLeft ? 0 : ClientSize.Width - GetExpandedWidth();
-            int centerLeft = contentOffset + (canNavigateLeft ? arrowWidth : 0);
-            if (zone == MiniHitZone.Left)
+            int cursor = contentOffset;
+            if (zone == MiniHitZone.DesktopLeft)
             {
-                return new Rectangle(contentOffset, 0, arrowWidth, ClientSize.Height);
+                return new Rectangle(cursor, 0, arrowWidth, ClientSize.Height);
+            }
+            if (canNavigateLeft)
+            {
+                cursor += arrowWidth;
             }
 
-            if (zone == MiniHitZone.Right)
+            if (zone == MiniHitZone.MediaPrevious)
             {
-                return new Rectangle(
-                    centerLeft + centerWidth,
-                    0,
-                    arrowWidth,
-                    ClientSize.Height);
+                return new Rectangle(cursor, 0, trackWidth, ClientSize.Height);
+            }
+            if (mediaSessionService.CanPrevious)
+            {
+                cursor += trackWidth;
             }
 
-            return new Rectangle(centerLeft, 0, centerWidth, ClientSize.Height);
+            if (zone == MiniHitZone.MediaPlayPause)
+            {
+                return new Rectangle(cursor, 0, centerWidth, ClientSize.Height);
+            }
+            cursor += centerWidth;
+
+            if (zone == MiniHitZone.MediaNext)
+            {
+                return new Rectangle(cursor, 0, trackWidth, ClientSize.Height);
+            }
+            if (mediaSessionService.CanNext)
+            {
+                cursor += trackWidth;
+            }
+
+            if (zone == MiniHitZone.More)
+            {
+                return new Rectangle(cursor, 0, moreWidth, ClientSize.Height);
+            }
+            cursor += moreWidth;
+
+            if (zone == MiniHitZone.DesktopRight)
+            {
+                return new Rectangle(cursor, 0, arrowWidth, ClientSize.Height);
+            }
+
+            return Rectangle.Empty;
         }
 
         private int GetExpandedWidth()
         {
             return ScaleLogical(
                 CenterZoneWidth
+                    + (mediaSessionService.CanPrevious ? TrackZoneWidth : 0)
+                    + (mediaSessionService.CanNext ? TrackZoneWidth : 0)
+                    + MoreZoneWidth
                     + (canNavigateLeft ? ArrowZoneWidth : 0)
                     + (canNavigateRight ? ArrowZoneWidth : 0));
         }
@@ -1325,7 +1813,9 @@ namespace Raudo
 
         private int ScaleLogical(int logicalPixels)
         {
-            int dpi = IsHandleCreated ? DeviceDpi : 96;
+            int dpi = testingDpi > 0
+                ? testingDpi
+                : (IsHandleCreated ? DeviceDpi : 96);
             return Math.Max(1, (logicalPixels * dpi + 48) / 96);
         }
 
@@ -1361,9 +1851,13 @@ namespace Raudo
         private enum MiniHitZone
         {
             None,
-            Left,
-            Center,
-            Right
+            Edge,
+            DesktopLeft,
+            MediaPrevious,
+            MediaPlayPause,
+            MediaNext,
+            More,
+            DesktopRight
         }
 
         private enum MiniPulseKind
