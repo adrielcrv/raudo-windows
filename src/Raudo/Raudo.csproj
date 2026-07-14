@@ -82,6 +82,9 @@
     <Compile Include="UpdateService.cs" />
     <Compile Include="UpdateInstaller.cs" />
     <Compile Include="VirtualDesktopService.cs" />
+    <Compile Include="VoiceCommand.cs" />
+    <Compile Include="VoiceOverlayForm.cs" />
+    <Compile Include="VoiceRecognitionService.cs" />
     <Compile Include="WindowTransition.cs" />
   </ItemGroup>
   <ItemGroup>

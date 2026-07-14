@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Win32;
 
@@ -16,6 +17,7 @@ namespace Raudo
         private readonly ContextMenuStrip trayMenu;
         private readonly ToolStripMenuItem statusItem;
         private readonly ToolStripMenuItem saltoItem;
+        private readonly ToolStripMenuItem voiceItem;
         private readonly ToolStripMenuItem toggleItem;
         private readonly ToolStripMenuItem durationMenu;
         private readonly ToolStripMenuItem mediaMenu;
@@ -33,13 +35,18 @@ namespace Raudo
         private readonly MediaControlService mediaControlService;
         private readonly RaudoActionCatalog actionCatalog;
         private readonly GlobalHotKey saltoHotKey;
+        private readonly GlobalHotKey voiceHotKey;
+        private readonly VoiceRecognitionService voiceRecognitionService;
 
         private MiniForm miniForm;
         private SaltoForm saltoForm;
+        private VoiceOverlayForm voiceOverlayForm;
         private ConnectedMinimizeTransition minimizeTransition;
         private KeepActivePhase? pendingReminder;
         private DateTime pendingReminderExpiresUtc;
         private KeepActivePhase observedPhase;
+        private bool voiceSessionActive;
+        private int voiceSessionVersion;
 
         private bool exiting;
 
@@ -57,6 +64,8 @@ namespace Raudo
             installedApplicationCatalog.LoadCompleted += InstalledApplicationsLoadCompleted;
             quickResultProvider = new QuickResultProvider(ClipboardWriter.TryCopy);
             mediaControlService = new MediaControlService();
+            voiceRecognitionService = new VoiceRecognitionService();
+            voiceRecognitionService.PhaseChanged += VoiceRecognitionPhaseChanged;
             actionCatalog = new RaudoActionCatalog(
                 CreateSaltoActions,
                 quickResultProvider.CreateActions);
@@ -83,6 +92,11 @@ namespace Raudo
             saltoItem.ShortcutKeyDisplayString = "Ctrl + Alt + Espacio";
             saltoItem.Click += delegate { ShowSalto(); };
             trayMenu.Items.Add(saltoItem);
+
+            voiceItem = new ToolStripMenuItem("Hablar con Raudo");
+            voiceItem.ShortcutKeyDisplayString = "Ctrl + Alt + V";
+            voiceItem.Click += delegate { ToggleVoiceSession(); };
+            trayMenu.Items.Add(voiceItem);
             trayMenu.Items.Add(new ToolStripSeparator());
 
             toggleItem = new ToolStripMenuItem();
@@ -154,6 +168,17 @@ namespace Raudo
                 saltoItem.ShortcutKeyDisplayString = "Atajo no disponible";
             }
 
+            voiceHotKey = new GlobalHotKey(
+                HotKeyModifiers.Control
+                    | HotKeyModifiers.Alt
+                    | HotKeyModifiers.NoRepeat,
+                Keys.V);
+            voiceHotKey.Pressed += VoiceHotKeyPressed;
+            if (!voiceHotKey.IsRegistered)
+            {
+                voiceItem.ShortcutKeyDisplayString = "Atajo no disponible";
+            }
+
             showRequestRegistration = ThreadPool.RegisterWaitForSingleObject(
                 showRequestEvent,
                 ShowRequestSignaled,
@@ -209,6 +234,17 @@ namespace Raudo
             List<RaudoAction> actions = new List<RaudoAction>();
             bool active = keepActiveService.IsActive;
             string duration = DurationOption.GetLabel(settings.DurationMinutes).ToLowerInvariant();
+            actions.Add(new RaudoAction(
+                "voice.listen",
+                "Hablar con Raudo",
+                "Una orden en español · procesamiento local",
+                "voz hablar microfono escuchar comando local",
+                voiceHotKey != null && voiceHotKey.IsRegistered
+                    ? "Ctrl + Alt + V"
+                    : string.Empty,
+                RaudoActionGlyph.Voice,
+                delegate { ToggleVoiceSession(); }));
+
             actions.Add(new RaudoAction(
                 "pulse.toggle",
                 active ? "Detener Pulso" : "Iniciar Pulso",
@@ -654,6 +690,14 @@ namespace Raudo
                         saltoForm.HideSalto();
                     }
 
+                    voiceSessionVersion++;
+                    voiceSessionActive = false;
+                    voiceRecognitionService.Cancel();
+                    if (voiceOverlayForm != null)
+                    {
+                        voiceOverlayForm.HideOverlay();
+                    }
+
                     if (keepActiveService.IsActive)
                     {
                         keepActiveService.Stop("Detenido al cerrar la sesión interactiva");
@@ -679,6 +723,14 @@ namespace Raudo
             {
                 RunOnUiThread(delegate
                 {
+                    voiceSessionVersion++;
+                    voiceSessionActive = false;
+                    voiceRecognitionService.Cancel();
+                    if (voiceOverlayForm != null)
+                    {
+                        voiceOverlayForm.HideOverlay();
+                    }
+
                     if (keepActiveService.IsActive)
                     {
                         keepActiveService.Stop("Detenido al suspender Windows");
@@ -705,6 +757,11 @@ namespace Raudo
                     {
                         miniForm.ApplyTheme(current);
                     }
+
+                    if (voiceOverlayForm != null)
+                    {
+                        voiceOverlayForm.ApplyTheme(current);
+                    }
                 });
             }
         }
@@ -721,6 +778,11 @@ namespace Raudo
                 if (saltoForm != null)
                 {
                     saltoForm.EnsureVisibleOnScreen();
+                }
+
+                if (voiceOverlayForm != null)
+                {
+                    voiceOverlayForm.EnsureVisibleOnScreen();
                 }
             });
         }
@@ -762,6 +824,297 @@ namespace Raudo
                 installedApplicationCatalog.IsLoading,
                 installedApplicationCatalog.LoadError);
             saltoForm.ShowSalto();
+        }
+
+        private async void ToggleVoiceSession()
+        {
+            if (exiting)
+            {
+                return;
+            }
+
+            if (voiceSessionActive || voiceRecognitionService.IsListening)
+            {
+                voiceSessionVersion++;
+                voiceSessionActive = false;
+                voiceRecognitionService.Cancel();
+                if (voiceOverlayForm != null)
+                {
+                    voiceOverlayForm.HideOverlay();
+                }
+
+                return;
+            }
+
+            VoiceAvailability availability = VoiceRecognitionService.GetAvailability();
+            EnsureVoiceOverlayForm();
+            if (!availability.IsAvailable)
+            {
+                voiceOverlayForm.ShowState(
+                    VoiceOverlayState.Unavailable,
+                    "Voz no disponible",
+                    availability.Message);
+                voiceOverlayForm.DismissAfter(6000);
+                return;
+            }
+
+            voiceSessionActive = true;
+            int sessionVersion = ++voiceSessionVersion;
+            voiceOverlayForm.ShowState(
+                VoiceOverlayState.Preparing,
+                "Preparando voz...",
+                "Español (México) · procesamiento local");
+
+            installedApplicationCatalog.EnsureLoading();
+            for (int attempt = 0;
+                attempt < 30
+                    && installedApplicationCatalog.IsLoading
+                    && sessionVersion == voiceSessionVersion;
+                attempt++)
+            {
+                await Task.Delay(100);
+            }
+
+            if (exiting || sessionVersion != voiceSessionVersion)
+            {
+                return;
+            }
+
+            VoiceRecognitionOutcome outcome = await voiceRecognitionService
+                .ListenOnceAsync(installedApplicationCatalog.GetSnapshot());
+            if (exiting || sessionVersion != voiceSessionVersion)
+            {
+                return;
+            }
+
+            voiceSessionActive = false;
+            PresentVoiceOutcome(outcome);
+        }
+
+        private void VoiceHotKeyPressed(object sender, EventArgs eventArgs)
+        {
+            ToggleVoiceSession();
+        }
+
+        private void VoiceRecognitionPhaseChanged(
+            object sender,
+            VoiceRecognitionPhaseEventArgs eventArgs)
+        {
+            RunOnUiThread(delegate
+            {
+                if (!voiceSessionActive)
+                {
+                    return;
+                }
+
+                EnsureVoiceOverlayForm();
+                if (eventArgs.Phase == VoiceRecognitionPhase.Listening)
+                {
+                    voiceOverlayForm.ShowState(
+                        VoiceOverlayState.Listening,
+                        "Escuchando...",
+                        "Prueba “abre Excel” o “cuánto es 12 por 8”.");
+                }
+                else
+                {
+                    voiceOverlayForm.ShowState(
+                        VoiceOverlayState.Preparing,
+                        "Preparando voz...",
+                        "Windows está cargando las órdenes locales.");
+                }
+            });
+        }
+
+        private void PresentVoiceOutcome(VoiceRecognitionOutcome outcome)
+        {
+            EnsureVoiceOverlayForm();
+            switch (outcome.Kind)
+            {
+                case VoiceRecognitionOutcomeKind.Cancelled:
+                    voiceOverlayForm.HideOverlay();
+                    return;
+                case VoiceRecognitionOutcomeKind.Unavailable:
+                    voiceOverlayForm.ShowState(
+                        VoiceOverlayState.Unavailable,
+                        "Voz no disponible",
+                        outcome.Message);
+                    voiceOverlayForm.DismissAfter(6000);
+                    return;
+                case VoiceRecognitionOutcomeKind.Error:
+                    voiceOverlayForm.ShowState(
+                        VoiceOverlayState.Unavailable,
+                        "No se pudo escuchar",
+                        outcome.Message);
+                    voiceOverlayForm.DismissAfter(5000);
+                    return;
+                case VoiceRecognitionOutcomeKind.NotUnderstood:
+                    voiceOverlayForm.ShowState(
+                        VoiceOverlayState.NotUnderstood,
+                        "No entendí esa orden",
+                        string.IsNullOrWhiteSpace(outcome.Text)
+                            ? outcome.Message
+                            : "Escuché “" + outcome.Text + "”. Intenta de nuevo.");
+                    voiceOverlayForm.DismissAfter(4500);
+                    return;
+            }
+
+            VoiceCommand command = VoiceCommandParser.Parse(
+                outcome.Text,
+                installedApplicationCatalog.GetSnapshot());
+            if (!command.IsRecognized)
+            {
+                voiceOverlayForm.ShowState(
+                    VoiceOverlayState.NotUnderstood,
+                    command.Title,
+                    command.Detail);
+                voiceOverlayForm.DismissAfter(4500);
+                return;
+            }
+
+            ExecuteVoiceCommand(command);
+        }
+
+        private void ExecuteVoiceCommand(VoiceCommand command)
+        {
+            string error = null;
+            switch (command.Kind)
+            {
+                case VoiceCommandKind.OpenApplication:
+                    error = InstalledApplicationLauncher.TryLaunch(
+                        command.ApplicationIdentifier);
+                    break;
+                case VoiceCommandKind.OpenYouTube:
+                    error = BrowserLauncher.TryOpenYouTube();
+                    break;
+                case VoiceCommandKind.OpenWeather:
+                    error = BrowserLauncher.TryOpenWeather();
+                    break;
+                case VoiceCommandKind.OpenSalto:
+                    voiceOverlayForm.HideOverlay();
+                    ShowSalto();
+                    return;
+                case VoiceCommandKind.OpenRaudo:
+                    voiceOverlayForm.HideOverlay();
+                    ShowWindow();
+                    return;
+                case VoiceCommandKind.StartPulse:
+                    if (!keepActiveService.IsActive)
+                    {
+                        keepActiveService.Start(settings.DurationMinutes);
+                    }
+                    break;
+                case VoiceCommandKind.StopPulse:
+                    if (keepActiveService.IsActive)
+                    {
+                        keepActiveService.Stop("Detenido por voz");
+                    }
+                    break;
+                case VoiceCommandKind.DesktopLeft:
+                    DesktopNavigation.TrySwitch(DesktopDirection.Left, out error);
+                    break;
+                case VoiceCommandKind.DesktopRight:
+                    DesktopNavigation.TrySwitch(DesktopDirection.Right, out error);
+                    break;
+                case VoiceCommandKind.DesktopAdjacent:
+                    bool canNavigateLeft;
+                    bool canNavigateRight;
+                    if (!virtualDesktopService.TryGetNavigationAvailability(
+                        out canNavigateLeft,
+                        out canNavigateRight))
+                    {
+                        error = "Windows no pudo consultar los escritorios virtuales.";
+                    }
+                    else if (canNavigateRight && !canNavigateLeft)
+                    {
+                        DesktopNavigation.TrySwitch(DesktopDirection.Right, out error);
+                    }
+                    else if (canNavigateLeft && !canNavigateRight)
+                    {
+                        DesktopNavigation.TrySwitch(DesktopDirection.Left, out error);
+                    }
+                    else if (canNavigateLeft && canNavigateRight)
+                    {
+                        error = "Di “escritorio izquierdo” o “escritorio derecho”.";
+                    }
+                    else
+                    {
+                        error = "No hay otro escritorio virtual disponible.";
+                    }
+                    break;
+                case VoiceCommandKind.ScreenCapture:
+                    voiceOverlayForm.HideOverlay();
+                    ScreenCaptureRequested(this, EventArgs.Empty);
+                    return;
+                case VoiceCommandKind.MediaPlayPause:
+                    error = mediaControlService.TryExecute(MediaCommand.TogglePlayPause);
+                    break;
+                case VoiceCommandKind.MediaPrevious:
+                    error = mediaControlService.TryExecute(MediaCommand.PreviousTrack);
+                    break;
+                case VoiceCommandKind.MediaNext:
+                    error = mediaControlService.TryExecute(MediaCommand.NextTrack);
+                    break;
+                case VoiceCommandKind.VolumeMute:
+                    error = mediaControlService.TryExecute(MediaCommand.ToggleMute);
+                    break;
+                case VoiceCommandKind.VolumeDown:
+                    error = mediaControlService.TryExecute(MediaCommand.VolumeDown);
+                    break;
+                case VoiceCommandKind.VolumeUp:
+                    error = mediaControlService.TryExecute(MediaCommand.VolumeUp);
+                    break;
+                case VoiceCommandKind.DictationUnavailable:
+                    voiceOverlayForm.ShowState(
+                        VoiceOverlayState.Unavailable,
+                        command.Title,
+                        command.Detail);
+                    voiceOverlayForm.DismissAfter(6000);
+                    return;
+                case VoiceCommandKind.Calculation:
+                case VoiceCommandKind.Conversion:
+                    break;
+                default:
+                    error = "La orden no pertenece al catálogo seguro de Raudo.";
+                    break;
+            }
+
+            if (!string.IsNullOrWhiteSpace(error))
+            {
+                voiceOverlayForm.ShowState(
+                    VoiceOverlayState.NotUnderstood,
+                    "No se pudo completar",
+                    error);
+                voiceOverlayForm.DismissAfter(4500);
+                return;
+            }
+
+            voiceOverlayForm.ShowState(
+                VoiceOverlayState.Success,
+                command.Title,
+                command.Detail);
+            voiceOverlayForm.DismissAfter(
+                command.Kind == VoiceCommandKind.Calculation
+                    || command.Kind == VoiceCommandKind.Conversion
+                    ? 4500
+                    : 2500);
+        }
+
+        private void EnsureVoiceOverlayForm()
+        {
+            if (voiceOverlayForm == null || voiceOverlayForm.IsDisposed)
+            {
+                voiceOverlayForm = new VoiceOverlayForm();
+                voiceOverlayForm.CancelRequested += VoiceOverlayCancelRequested;
+                voiceOverlayForm.ApplyTheme(ThemeService.Current());
+            }
+        }
+
+        private void VoiceOverlayCancelRequested(object sender, EventArgs eventArgs)
+        {
+            if (voiceSessionActive || voiceRecognitionService.IsListening)
+            {
+                ToggleVoiceSession();
+            }
         }
 
         private void SaltoHotKeyPressed(object sender, EventArgs eventArgs)
@@ -1037,6 +1390,13 @@ namespace Raudo
             form.UpdateRestartRequested -= MainFormUpdateRestartRequested;
             saltoHotKey.Pressed -= SaltoHotKeyPressed;
             saltoHotKey.Dispose();
+            voiceHotKey.Pressed -= VoiceHotKeyPressed;
+            voiceHotKey.Dispose();
+            voiceSessionVersion++;
+            voiceSessionActive = false;
+            voiceRecognitionService.PhaseChanged -= VoiceRecognitionPhaseChanged;
+            voiceRecognitionService.Cancel();
+            voiceRecognitionService.Dispose();
             reminderRetryTimer.Stop();
             if (minimizeTransition != null)
             {
@@ -1053,6 +1413,14 @@ namespace Raudo
                 saltoForm.AllowCloseAndClose();
                 saltoForm.Dispose();
                 saltoForm = null;
+            }
+
+            if (voiceOverlayForm != null)
+            {
+                voiceOverlayForm.CancelRequested -= VoiceOverlayCancelRequested;
+                voiceOverlayForm.AllowCloseAndClose();
+                voiceOverlayForm.Dispose();
+                voiceOverlayForm = null;
             }
 
             DestroyMiniForm();

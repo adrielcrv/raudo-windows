@@ -10,6 +10,7 @@ namespace Raudo
     internal enum RaudoActionGlyph
     {
         Pulse,
+        Voice,
         Capture,
         MainWindow,
         Mini,
@@ -388,6 +389,9 @@ namespace Raudo
                     pen.LineJoin = LineJoin.Round;
                     switch (glyph)
                     {
+                        case RaudoActionGlyph.Voice:
+                            DrawVoice(graphics, pen, left, top, scale);
+                            break;
                         case RaudoActionGlyph.Capture:
                             DrawCapture(graphics, pen, left, top, scale);
                             break;
@@ -460,6 +464,53 @@ namespace Raudo
                 new PointF(left + (22F * scale), top + (11F * scale))
             };
             graphics.DrawLines(pen, points);
+        }
+
+        private static void DrawVoice(
+            Graphics graphics,
+            Pen pen,
+            float left,
+            float top,
+            float scale)
+        {
+            RectangleF capsule = new RectangleF(
+                left + (8F * scale),
+                top + (3F * scale),
+                8F * scale,
+                12F * scale);
+            graphics.DrawArc(pen, capsule, 180F, 180F);
+            graphics.DrawLine(
+                pen,
+                capsule.Left,
+                capsule.Top + (4F * scale),
+                capsule.Left,
+                capsule.Bottom - (4F * scale));
+            graphics.DrawLine(
+                pen,
+                capsule.Right,
+                capsule.Top + (4F * scale),
+                capsule.Right,
+                capsule.Bottom - (4F * scale));
+            graphics.DrawArc(
+                pen,
+                left + (5F * scale),
+                top + (9F * scale),
+                14F * scale,
+                10F * scale,
+                0F,
+                180F);
+            graphics.DrawLine(
+                pen,
+                left + (12F * scale),
+                top + (19F * scale),
+                left + (12F * scale),
+                top + (22F * scale));
+            graphics.DrawLine(
+                pen,
+                left + (9F * scale),
+                top + (22F * scale),
+                left + (15F * scale),
+                top + (22F * scale));
         }
 
         private static void DrawCapture(Graphics graphics, Pen pen, float left, float top, float scale)
