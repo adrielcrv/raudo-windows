@@ -21,6 +21,66 @@ internal static class TestRunner
         try
         {
             if (args.Length == 1
+                && args[0].StartsWith("--capture-welcome-intro-dark=", StringComparison.Ordinal))
+            {
+                CaptureWelcome(
+                    args[0].Substring("--capture-welcome-intro-dark=".Length),
+                    true,
+                    false,
+                    true,
+                    1F);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
+                && args[0].StartsWith("--capture-welcome-changes-light=", StringComparison.Ordinal))
+            {
+                CaptureWelcome(
+                    args[0].Substring("--capture-welcome-changes-light=".Length),
+                    false,
+                    true,
+                    false,
+                    1F);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
+                && args[0].StartsWith("--capture-welcome-intro-light-150=", StringComparison.Ordinal))
+            {
+                CaptureWelcome(
+                    args[0].Substring("--capture-welcome-intro-light-150=".Length),
+                    false,
+                    false,
+                    true,
+                    1.5F);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
+                && args[0].StartsWith("--capture-welcome-high-contrast=", StringComparison.Ordinal))
+            {
+                CaptureWelcome(
+                    args[0].Substring("--capture-welcome-high-contrast=".Length),
+                    ThemePalette.CreateHighContrast(),
+                    false,
+                    false,
+                    1F);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
+                && string.Equals(args[0], "--resource-probe-welcome", StringComparison.Ordinal))
+            {
+                RunWelcomeResourceProbe();
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
                 && args[0].StartsWith("--capture-voice-listening-dark=", StringComparison.Ordinal))
             {
                 CaptureVoiceOverlay(
@@ -544,6 +604,102 @@ internal static class TestRunner
     private static void CaptureUi(string path, bool? dark)
     {
         CaptureUi(path, dark, false);
+    }
+
+    private static void CaptureWelcome(
+        string path,
+        bool dark,
+        bool changes,
+        bool installAvailable,
+        float scaleFactor)
+    {
+        CaptureWelcome(
+            path,
+            ThemePalette.Create(dark),
+            changes,
+            installAvailable,
+            scaleFactor);
+    }
+
+    private static void CaptureWelcome(
+        string path,
+        ThemePalette palette,
+        bool changes,
+        bool installAvailable,
+        float scaleFactor)
+    {
+        Application.EnableVisualStyles();
+        Application.SetCompatibleTextRenderingDefault(false);
+        using (Icon icon = IconFactory.Create(false))
+        using (WelcomeForm form = new WelcomeForm(icon, changes, installAvailable))
+        {
+            form.ApplyTheme(palette);
+            if (Math.Abs(scaleFactor - 1F) > 0.001F)
+            {
+                form.Scale(new SizeF(scaleFactor, scaleFactor));
+            }
+
+            form.ShowWelcome();
+            Application.DoEvents();
+            Thread.Sleep(120);
+            Application.DoEvents();
+            using (Bitmap full = new Bitmap(form.Width, form.Height))
+            {
+                form.DrawToBitmap(full, new Rectangle(0, 0, form.Width, form.Height));
+                int border = Math.Max(0, (form.Width - form.ClientSize.Width) / 2);
+                int top = Math.Max(0, form.Height - form.ClientSize.Height - border);
+                Rectangle clientBounds = new Rectangle(
+                    border,
+                    top,
+                    form.ClientSize.Width,
+                    form.ClientSize.Height);
+                using (Bitmap client = full.Clone(clientBounds, PixelFormat.Format32bppArgb))
+                {
+                    client.Save(path, ImageFormat.Png);
+                }
+            }
+
+            form.AllowCloseAndClose();
+        }
+    }
+
+    private static void RunWelcomeResourceProbe()
+    {
+        Application.EnableVisualStyles();
+        Application.SetCompatibleTextRenderingDefault(false);
+        using (Icon icon = IconFactory.Create(false))
+        using (WelcomeForm form = new WelcomeForm(icon, false, true))
+        using (Process process = Process.GetCurrentProcess())
+        {
+            form.ShowWelcome();
+            Application.DoEvents();
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+
+            TimeSpan cpuBefore = process.TotalProcessorTime;
+            Stopwatch elapsed = Stopwatch.StartNew();
+            while (elapsed.Elapsed < TimeSpan.FromSeconds(6))
+            {
+                Application.DoEvents();
+                Thread.Sleep(50);
+            }
+
+            elapsed.Stop();
+            process.Refresh();
+            TimeSpan cpuUsed = process.TotalProcessorTime - cpuBefore;
+            double normalizedCpuPercent = cpuUsed.TotalMilliseconds
+                / elapsed.Elapsed.TotalMilliseconds
+                / Math.Max(1, Environment.ProcessorCount)
+                * 100D;
+            Console.WriteLine(
+                "Welcome CPU: {0:F3}% · Working set: {1:F1} MB · Private: {2:F1} MB",
+                normalizedCpuPercent,
+                process.WorkingSet64 / 1024D / 1024D,
+                process.PrivateMemorySize64 / 1024D / 1024D);
+            Assert(normalizedCpuPercent < 1D, "La bienvenida excedió 1% de CPU visible.");
+            form.AllowCloseAndClose();
+        }
     }
 
     private static void CaptureUi(string path, bool? dark, bool active)
@@ -1789,6 +1945,54 @@ internal static class TestRunner
     private static void RunUnitTests()
     {
         TestVoiceCommands();
+        Application.EnableVisualStyles();
+        Application.SetCompatibleTextRenderingDefault(false);
+        using (Icon welcomeIcon = IconFactory.Create(false))
+        using (WelcomeForm welcomeForm = new WelcomeForm(welcomeIcon, false, false))
+        {
+            bool welcomeDismissed = false;
+            welcomeForm.Dismissed += delegate { welcomeDismissed = true; };
+            welcomeForm.ShowWelcome();
+            Application.DoEvents();
+            WelcomeButton welcomePrimaryButton = null;
+            WelcomeFeatureCard welcomeFeatureCard = null;
+            foreach (Control control in welcomeForm.Controls)
+            {
+                WelcomeButton candidateButton = control as WelcomeButton;
+                if (candidateButton != null && candidateButton.Text == "Empezar")
+                {
+                    welcomePrimaryButton = candidateButton;
+                }
+
+                WelcomeFeatureCard candidateCard = control as WelcomeFeatureCard;
+                if (candidateCard != null && welcomeFeatureCard == null)
+                {
+                    welcomeFeatureCard = candidateCard;
+                }
+            }
+
+            Assert(
+                welcomePrimaryButton != null
+                    && welcomePrimaryButton.CanFocus
+                    && welcomePrimaryButton.TabStop
+                    && welcomePrimaryButton.AccessibilityObject.Role
+                        == AccessibleRole.PushButton,
+                "La acción principal de la bienvenida no expone un botón accesible.");
+            Assert(
+                welcomeFeatureCard != null
+                    && welcomeFeatureCard.CanFocus
+                    && welcomeFeatureCard.TabStop
+                    && welcomeFeatureCard.AccessibilityObject.Role
+                        == AccessibleRole.PushButton,
+                "El recorrido de la bienvenida no expone controles accesibles.");
+            welcomeForm.Close();
+            Application.DoEvents();
+            Assert(
+                welcomeDismissed && !welcomeForm.Visible,
+                "Cerrar la bienvenida no registró que el usuario terminó la guía.");
+            welcomeForm.AllowCloseAndClose();
+        }
+
         Assert(DurationOption.IsSupported(15), "15 minutos debe ser válido.");
         Assert(DurationOption.IsSupported(120), "120 minutos debe ser válido.");
         Assert(!DurationOption.IsSupported(0), "La duración ilimitada no debe estar disponible.");
@@ -1808,6 +2012,7 @@ internal static class TestRunner
             settings.SaltoCenterX = 760;
             settings.SaltoTopY = 180;
             settings.SaltoOpacityPercent = 82;
+            settings.LastWelcomeVersion = "1.9.0";
             settings.PulseActiveUntilUtcTicks = new DateTime(
                 2026,
                 7,
@@ -1833,6 +2038,12 @@ internal static class TestRunner
             Assert(
                 loaded.PulseActiveUntilUtcTicks == settings.PulseActiveUntilUtcTicks,
                 "La expiración de Pulso no sobrevivió al guardado.");
+            Assert(
+                loaded.LastWelcomeVersion == "1.9.0",
+                "La versión vista de la bienvenida no sobrevivió al guardado.");
+            Assert(
+                new SettingsStore(settingsPath).HadStoredSettings,
+                "La primera ejecución no distinguió una configuración existente.");
 
             settings.DurationMinutes = 0;
             settings.SaltoCenterX = -4;
@@ -2597,6 +2808,46 @@ internal static class TestRunner
         Assert(
             !UpdateService.IsInstalledLocation(Path.Combine(root, "Raudo.exe")),
             "Una copia portable fue confundida con la instalación local.");
+
+        InstallationCommand installationCommand;
+        string installationError;
+        Assert(
+            InstallationService.TryParseCommand(
+                new[] { "--install", "--no-launch", "--desktop-shortcut" },
+                out installationCommand,
+                out installationError)
+                && installationCommand.NoLaunch
+                && installationCommand.DesktopShortcut,
+            "Los argumentos acotados de instalación no se interpretaron correctamente.");
+        Assert(
+            !InstallationService.TryParseCommand(
+                new[] { "--install", "--target=C:\\otro" },
+                out installationCommand,
+                out installationError),
+            "El instalador aceptó una ruta externa no permitida.");
+        Assert(
+            InstallationService.HasInstallationArguments(new[] { "--no-launch" }),
+            "Un modificador de instalación aislado no fue rechazado por la ruta dedicada.");
+
+        string installFixtureRoot = Path.Combine(root, "install-fixture");
+        Directory.CreateDirectory(installFixtureRoot);
+        string installSource = Path.Combine(installFixtureRoot, "source.exe");
+        string installTarget = Path.Combine(installFixtureRoot, "target.exe");
+        File.WriteAllBytes(installSource, new byte[] { 82, 97, 117, 100, 111, 19 });
+        File.WriteAllBytes(installTarget, new byte[] { 1, 2, 3 });
+        InstallationService.CopyExecutableAtomically(installSource, installTarget);
+        Assert(
+            UpdateService.ComputeSha256(installSource)
+                == UpdateService.ComputeSha256(installTarget),
+            "La copia atómica de instalación no conservó el ejecutable.");
+
+        string shortcutPath = Path.Combine(installFixtureRoot, "Raudo.lnk");
+        InstallationService.CreateShortcut(
+            shortcutPath,
+            typeof(UpdateService).Assembly.Location);
+        Assert(
+            File.Exists(shortcutPath) && new FileInfo(shortcutPath).Length > 0,
+            "No se pudo crear un acceso directo nativo de Windows.");
 
         string approvedUpdateDirectory = Path.Combine(
             UpdateInstaller.UpdateRootDirectory,

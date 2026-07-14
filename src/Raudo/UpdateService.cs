@@ -107,17 +107,7 @@ namespace Raudo
 
         internal static bool IsInstalledLocation(string executablePath)
         {
-            if (string.IsNullOrWhiteSpace(executablePath))
-            {
-                return false;
-            }
-
-            string expected = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "Programs",
-                "Raudo",
-                "Raudo.exe");
-            return PathsEqual(executablePath, expected);
+            return InstallationService.IsInstalledLocation(executablePath);
         }
 
         internal static string ComputeSha256(string path)

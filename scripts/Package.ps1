@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = '1.8.4',
+    [string]$Version = '1.9.0',
     [switch]$SkipBuild
 )
 
@@ -17,6 +17,10 @@ $sourceExe = Join-Path $artifactsPath 'Raudo.exe'
 $stagingPath = Join-Path $artifactsPath 'package'
 $zipPath = Join-Path $artifactsPath "Raudo-v$Version-win.zip"
 $zipHashPath = "$zipPath.sha256"
+$directExePath = Join-Path $artifactsPath "Raudo-v$Version-win.exe"
+$directExeHashPath = "$directExePath.sha256"
+$latestExePath = Join-Path $artifactsPath 'Raudo-win.exe'
+$latestExeHashPath = "$latestExePath.sha256"
 
 if (-not $SkipBuild) {
     & (Join-Path $PSScriptRoot 'Build.ps1') -Test
@@ -30,6 +34,20 @@ $assemblyVersion = [Reflection.AssemblyName]::GetAssemblyName($sourceExe).Versio
 if (-not [string]::Equals($assemblyVersion, $Version, [StringComparison]::Ordinal)) {
     throw "La versión del ejecutable ($assemblyVersion) no coincide con el paquete solicitado ($Version)."
 }
+
+foreach ($path in @($directExePath, $directExeHashPath, $latestExePath, $latestExeHashPath)) {
+    if (Test-Path -LiteralPath $path) {
+        Remove-Item -LiteralPath $path -Force
+    }
+}
+
+Copy-Item -LiteralPath $sourceExe -Destination $directExePath
+Copy-Item -LiteralPath $sourceExe -Destination $latestExePath
+$directExeHash = Get-FileHash -Algorithm SHA256 -LiteralPath $directExePath
+Set-Content -LiteralPath $directExeHashPath -Encoding ascii -Value (
+    "$($directExeHash.Hash.ToLowerInvariant())  $(Split-Path -Leaf $directExePath)")
+Set-Content -LiteralPath $latestExeHashPath -Encoding ascii -Value (
+    "$($directExeHash.Hash.ToLowerInvariant())  $(Split-Path -Leaf $latestExePath)")
 
 if (Test-Path -LiteralPath $stagingPath) {
     $resolvedStaging = (Resolve-Path -LiteralPath $stagingPath).Path
@@ -62,3 +80,5 @@ Set-Content -LiteralPath $zipHashPath -Encoding ascii -Value (
 Remove-Item -LiteralPath $stagingPath -Recurse -Force
 Write-Output "Paquete: $zipPath"
 Write-Output "SHA256: $($zipHash.Hash)"
+Write-Output "Instalador directo: $directExePath"
+Write-Output "SHA256: $($directExeHash.Hash)"

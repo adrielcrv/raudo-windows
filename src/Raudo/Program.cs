@@ -13,6 +13,11 @@ namespace Raudo
         [STAThread]
         private static int Main(string[] args)
         {
+            if (InstallationService.HasInstallationArguments(args))
+            {
+                return RunInstallation(args);
+            }
+
             if (UpdateInstaller.IsApplyRequest(args))
             {
                 return UpdateInstaller.Apply(args);
@@ -21,6 +26,7 @@ namespace Raudo
             UpdateInstaller.Cleanup(args);
             bool startInBackground = args.Any(
                 argument => string.Equals(argument, "--background", StringComparison.OrdinalIgnoreCase));
+            string restartAfterExit = null;
 
             bool createdNew;
             using (Mutex mutex = new Mutex(true, MutexName, out createdNew))
@@ -44,8 +50,53 @@ namespace Raudo
                 Application.SetCompatibleTextRenderingDefault(false);
                 Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
                 Application.ThreadException += HandleThreadException;
-                Application.Run(new RaudoApplicationContext(!startInBackground, showEvent));
+                using (RaudoApplicationContext context = new RaudoApplicationContext(
+                    !startInBackground,
+                    showEvent))
+                {
+                    Application.Run(context);
+                    restartAfterExit = context.RestartAfterExitPath;
+                }
+
                 GC.KeepAlive(mutex);
+            }
+
+            if (!string.IsNullOrWhiteSpace(restartAfterExit))
+            {
+                InstallationService.LaunchInstalledExecutable(restartAfterExit);
+            }
+
+            return 0;
+        }
+
+        private static int RunInstallation(string[] arguments)
+        {
+            InstallationCommand command;
+            string error;
+            if (!InstallationService.TryParseCommand(arguments, out command, out error))
+            {
+                return InstallationService.InvalidArgumentsExitCode;
+            }
+
+            InstallationResult result = InstallationService.InstallCurrentExecutable(
+                command.DesktopShortcut);
+            if (!result.Succeeded)
+            {
+                if (!command.NoLaunch)
+                {
+                    MessageBox.Show(
+                        result.Message,
+                        "Instalación de Raudo",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error);
+                }
+
+                return 1;
+            }
+
+            if (!command.NoLaunch)
+            {
+                InstallationService.LaunchInstalledExecutable(result.InstalledExecutablePath);
             }
 
             return 0;

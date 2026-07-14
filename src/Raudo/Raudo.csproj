@@ -69,6 +69,7 @@
     <Compile Include="DesktopGuideForm.cs" />
     <Compile Include="GlobalHotKey.cs" />
     <Compile Include="KeepActiveService.cs" />
+    <Compile Include="InstallationService.cs" />
     <Compile Include="MainForm.cs" />
     <Compile Include="MediaControl.cs" />
     <Compile Include="MediaSessionService.cs" />
@@ -87,6 +88,7 @@
     <Compile Include="VoiceCommand.cs" />
     <Compile Include="VoiceOverlayForm.cs" />
     <Compile Include="VoiceRecognitionService.cs" />
+    <Compile Include="WelcomeForm.cs" />
     <Compile Include="WindowTransition.cs" />
   </ItemGroup>
   <ItemGroup>
