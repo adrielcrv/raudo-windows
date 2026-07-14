@@ -172,7 +172,7 @@ namespace Raudo
             trayMenu.Items.Add(new ToolStripSeparator());
 
             ToolStripMenuItem exitItem = new ToolStripMenuItem("Salir de Raudo");
-            exitItem.Click += delegate { ExitThread(); };
+            exitItem.Click += ExitMenuItemClick;
             trayMenu.Items.Add(exitItem);
 
             notifyIcon = new NotifyIcon();
@@ -224,6 +224,7 @@ namespace Raudo
             SystemEvents.UserPreferenceChanged += SystemUserPreferenceChanged;
             SystemEvents.DisplaySettingsChanged += SystemDisplaySettingsChanged;
 
+            RestorePulseSession();
             UpdatePresentation();
             if (settings.MiniModeEnabled && virtualDesktopService.IsAvailable)
             {
@@ -598,6 +599,16 @@ namespace Raudo
             ExitThread();
         }
 
+        private void ExitMenuItemClick(object sender, EventArgs eventArgs)
+        {
+            if (keepActiveService.IsActive)
+            {
+                keepActiveService.Stop("Detenido al salir");
+            }
+
+            ExitThread();
+        }
+
         private void MiniModeMenuItemClick(object sender, EventArgs eventArgs)
         {
             SetMiniMode(miniModeItem.Checked, true);
@@ -707,6 +718,8 @@ namespace Raudo
 
         private void KeepActiveServiceStateChanged(object sender, EventArgs eventArgs)
         {
+            PersistPulseSession();
+
             if (keepActiveService.Phase != observedPhase)
             {
                 ClearPendingReminder();
@@ -714,6 +727,43 @@ namespace Raudo
             }
 
             UpdatePresentation();
+        }
+
+        private void RestorePulseSession()
+        {
+            long storedExpiration = settings.PulseActiveUntilUtcTicks;
+            if (storedExpiration == 0)
+            {
+                return;
+            }
+
+            DateTime expirationUtc;
+            if (PulseSessionState.TryGetRestorableExpiration(
+                    storedExpiration,
+                    DateTime.UtcNow,
+                    out expirationUtc)
+                && keepActiveService.TryResume(expirationUtc))
+            {
+                return;
+            }
+
+            settings.PulseActiveUntilUtcTicks = 0;
+            SaveSettings();
+        }
+
+        private void PersistPulseSession()
+        {
+            DateTime? expirationUtc = keepActiveService.ActiveUntilUtc;
+            long currentExpiration = expirationUtc.HasValue
+                ? expirationUtc.Value.Ticks
+                : 0;
+            if (settings.PulseActiveUntilUtcTicks == currentExpiration)
+            {
+                return;
+            }
+
+            settings.PulseActiveUntilUtcTicks = currentExpiration;
+            SaveSettings();
         }
 
         private void KeepActiveServiceAttentionRequired(

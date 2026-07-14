@@ -49,6 +49,10 @@ namespace Raudo
         public KeepActivePhase Phase { get; private set; }
         public int PulseCount { get; private set; }
         public string StatusMessage { get; private set; }
+        public DateTime? ActiveUntilUtc
+        {
+            get { return IsActive ? activeUntilUtc : (DateTime?)null; }
+        }
 
         public void Start(int durationMinutes)
         {
@@ -63,8 +67,40 @@ namespace Raudo
                 Stop("Reiniciado");
             }
 
+            ActivateUntil(DateTime.UtcNow.AddMinutes(durationMinutes));
+        }
+
+        public bool TryResume(DateTime expirationUtc)
+        {
+            ThrowIfDisposed();
+
+            if (expirationUtc.Kind != DateTimeKind.Utc)
+            {
+                expirationUtc = expirationUtc.ToUniversalTime();
+            }
+
+            DateTime restorableExpiration;
+            if (!PulseSessionState.TryGetRestorableExpiration(
+                expirationUtc.Ticks,
+                DateTime.UtcNow,
+                out restorableExpiration))
+            {
+                return false;
+            }
+
+            if (IsActive)
+            {
+                Stop("Reiniciado");
+            }
+
+            ActivateUntil(restorableExpiration);
+            return true;
+        }
+
+        private void ActivateUntil(DateTime expirationUtc)
+        {
             keepAwakeGranted = PowerState.TryKeepAwake();
-            activeUntilUtc = DateTime.UtcNow.AddMinutes(durationMinutes);
+            activeUntilUtc = expirationUtc;
             PulseCount = 0;
             StatusMessage = keepAwakeGranted
                 ? "Activo"

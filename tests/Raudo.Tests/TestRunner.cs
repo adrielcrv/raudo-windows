@@ -1798,6 +1798,14 @@ internal static class TestRunner
             settings.SaltoCenterX = 760;
             settings.SaltoTopY = 180;
             settings.SaltoOpacityPercent = 82;
+            settings.PulseActiveUntilUtcTicks = new DateTime(
+                2026,
+                7,
+                14,
+                18,
+                30,
+                0,
+                DateTimeKind.Utc).Ticks;
             store.Save(settings);
             RaudoSettings loaded = store.Load();
             Assert(loaded.DurationMinutes == 60, "La configuración no sobrevivió al guardado.");
@@ -1812,11 +1820,15 @@ internal static class TestRunner
             Assert(
                 loaded.SaltoOpacityPercent == 82,
                 "La opacidad de Salto no sobrevivió al guardado.");
+            Assert(
+                loaded.PulseActiveUntilUtcTicks == settings.PulseActiveUntilUtcTicks,
+                "La expiración de Pulso no sobrevivió al guardado.");
 
             settings.DurationMinutes = 0;
             settings.SaltoCenterX = -4;
             settings.SaltoTopY = 180;
             settings.SaltoOpacityPercent = 73;
+            settings.PulseActiveUntilUtcTicks = -1;
             store.Save(settings);
             Assert(store.Load().DurationMinutes == 30, "La normalización de duración no funcionó.");
             Assert(
@@ -1824,6 +1836,9 @@ internal static class TestRunner
                     && store.Load().SaltoTopY == -1
                     && store.Load().SaltoOpacityPercent == 100,
                 "La normalización de presentación de Salto no funcionó.");
+            Assert(
+                store.Load().PulseActiveUntilUtcTicks == 0,
+                "La normalización de la expiración de Pulso no funcionó.");
         }
         finally
         {
@@ -2453,6 +2468,57 @@ internal static class TestRunner
             KeepActiveService.DeterminePhase(TimeSpan.Zero)
                 == KeepActivePhase.Completed,
             "Una sesión agotada debe marcarse como completada.");
+
+        DateTime pulseReferenceUtc = new DateTime(
+            2026,
+            7,
+            14,
+            18,
+            0,
+            0,
+            DateTimeKind.Utc);
+        DateTime restorablePulseExpiration;
+        DateTime expectedPulseExpiration = pulseReferenceUtc.AddMinutes(30);
+        Assert(
+            PulseSessionState.TryGetRestorableExpiration(
+                expectedPulseExpiration.Ticks,
+                pulseReferenceUtc,
+                out restorablePulseExpiration)
+                && restorablePulseExpiration == expectedPulseExpiration,
+            "Una sesión vigente de Pulso no se puede restaurar.");
+        Assert(
+            !PulseSessionState.TryGetRestorableExpiration(
+                pulseReferenceUtc.Ticks,
+                pulseReferenceUtc,
+                out restorablePulseExpiration),
+            "Una sesión vencida de Pulso se consideró restaurable.");
+        Assert(
+            !PulseSessionState.TryGetRestorableExpiration(
+                pulseReferenceUtc.AddMinutes(126).Ticks,
+                pulseReferenceUtc,
+                out restorablePulseExpiration),
+            "Una expiración implausible de Pulso se consideró restaurable.");
+        Assert(
+            !PulseSessionState.TryGetRestorableExpiration(
+                -1,
+                pulseReferenceUtc,
+                out restorablePulseExpiration),
+            "Una expiración inválida de Pulso se consideró restaurable.");
+
+        using (KeepActiveService restoredPulse = new KeepActiveService())
+        {
+            DateTime liveExpiration = DateTime.UtcNow.AddMinutes(15);
+            Assert(
+                restoredPulse.TryResume(liveExpiration)
+                    && restoredPulse.IsActive
+                    && restoredPulse.ActiveUntilUtc.HasValue
+                    && restoredPulse.ActiveUntilUtc.Value == liveExpiration,
+                "Pulso no reanudó una sesión vigente.");
+            restoredPulse.Stop("Prueba completada");
+            Assert(
+                !restoredPulse.IsActive && !restoredPulse.ActiveUntilUtc.HasValue,
+                "Pulso conservó una expiración después de detenerse.");
+        }
 
         Assert(
             ShellUserState.IsImmersive(UserNotificationState.RunningDirect3DFullScreen)
