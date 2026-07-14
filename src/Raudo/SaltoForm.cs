@@ -41,7 +41,7 @@ namespace Raudo
             Text = "Salto · Raudo";
             AccessibleName = "Salto de Raudo";
             AccessibleDescription =
-                "Busca ventanas, aplicaciones y acciones locales de Raudo";
+                "Busca ventanas, aplicaciones y carpetas, o calcula localmente";
             ClientSize = new Size(640, 432);
             FormBorderStyle = FormBorderStyle.None;
             ShowInTaskbar = false;
@@ -74,7 +74,7 @@ namespace Raudo
             searchBox.TabIndex = 0;
             searchBox.AccessibleName = "Buscar en Salto";
             searchBox.AccessibleDescription =
-                "Escribe para buscar ventanas, aplicaciones y acciones";
+                "Escribe para buscar ventanas, aplicaciones y carpetas, o calcular";
             searchBox.TextChanged += SearchBoxTextChanged;
             searchBox.HandleCreated += delegate { ApplySearchCue(); };
             searchSurface.Controls.Add(searchBox);
@@ -103,6 +103,7 @@ namespace Raudo
             resultList.AccessibleName = "Resultados de Salto";
             resultList.MouseClick += ResultListMouseClick;
             resultList.KeyDown += ResultListKeyDown;
+            resultList.SelectedIndexChanged += delegate { UpdateKeyboardHint(); };
             Controls.Add(resultList);
 
             emptyLabel = CreateLabel(
@@ -278,6 +279,11 @@ namespace Raudo
             get { return openingTimer.Enabled; }
         }
 
+        internal string KeyboardHintForTesting
+        {
+            get { return keyboardHintLabel.Text; }
+        }
+
         internal void SetQueryForTesting(string query)
         {
             searchBox.Text = query ?? string.Empty;
@@ -431,7 +437,7 @@ namespace Raudo
                     searchBox.Handle,
                     setCueBanner,
                     new IntPtr(1),
-                    "Buscar ventanas, aplicaciones o acciones");
+                    "Buscar ventanas, apps, carpetas o calcular");
             }
         }
 
@@ -488,6 +494,44 @@ namespace Raudo
                     emptyLabel.Text = "No hay resultados que coincidan";
                 }
             }
+
+            UpdateKeyboardHint();
+        }
+
+        private void UpdateKeyboardHint()
+        {
+            RaudoAction action = resultList.SelectedItem as RaudoAction;
+            if (action == null)
+            {
+                keyboardHintLabel.Text = "Esc  cerrar";
+                return;
+            }
+
+            string verb;
+            switch (action.Kind)
+            {
+                case RaudoActionKind.Calculation:
+                case RaudoActionKind.Conversion:
+                    verb = "copiar";
+                    break;
+                case RaudoActionKind.Window:
+                    verb = string.Equals(
+                        action.ShortcutHint,
+                        "Traer",
+                        StringComparison.OrdinalIgnoreCase)
+                        ? "traer"
+                        : "abrir";
+                    break;
+                case RaudoActionKind.Application:
+                case RaudoActionKind.Folder:
+                    verb = "abrir";
+                    break;
+                default:
+                    verb = "ejecutar";
+                    break;
+            }
+
+            keyboardHintLabel.Text = "↑↓  mover     Enter  " + verb;
         }
 
         private void MoveSelection(int direction)
