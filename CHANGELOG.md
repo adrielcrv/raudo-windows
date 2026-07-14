@@ -4,6 +4,15 @@ Este proyecto utiliza versionado semántico.
 
 ## [Sin publicar]
 
+## [1.4.0] - 2026-07-13
+
+- Salto calcula expresiones aritméticas acotadas y convierte unidades comunes de longitud, masa, temperatura, tiempo y almacenamiento sin conexión.
+- Los resultados de cálculo y conversión se copian únicamente después de seleccionarlos con `Enter` o un clic.
+- Acceso directo a carpetas conocidas y existentes de Windows, limitado a ubicaciones locales no remotas.
+- Resultados generados por consulta sin volver a enumerar ventanas ni aplicaciones en cada pulsación.
+- Nuevos iconos vectoriales y ayuda de teclado contextual para copiar, abrir, traer o ejecutar.
+- Validación ampliada para entradas inválidas, rutas remotas, temas, alto contraste, escalado y consumo de recursos.
+
 ## [1.3.0] - 2026-07-13
 
 - Salto ahora encuentra ventanas abiertas por título o aplicación y distingue el escritorio actual de otro escritorio.

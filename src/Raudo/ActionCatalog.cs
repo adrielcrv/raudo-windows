@@ -16,14 +16,20 @@ namespace Raudo
         DesktopLeft,
         DesktopRight,
         Window,
-        Application
+        Application,
+        Calculator,
+        Conversion,
+        Folder
     }
 
     internal enum RaudoActionKind
     {
         Raudo,
         Window,
-        Application
+        Application,
+        Calculation,
+        Conversion,
+        Folder
     }
 
     internal sealed class RaudoAction
@@ -191,9 +197,17 @@ namespace Raudo
     internal sealed class RaudoActionCatalog
     {
         private readonly Func<IList<RaudoAction>> source;
+        private readonly Func<string, IList<RaudoAction>> querySource;
         private readonly List<RaudoAction> snapshot;
 
         public RaudoActionCatalog(Func<IList<RaudoAction>> actionSource)
+            : this(actionSource, null)
+        {
+        }
+
+        public RaudoActionCatalog(
+            Func<IList<RaudoAction>> actionSource,
+            Func<string, IList<RaudoAction>> dynamicQuerySource)
         {
             if (actionSource == null)
             {
@@ -201,6 +215,7 @@ namespace Raudo
             }
 
             source = actionSource;
+            querySource = dynamicQuerySource;
             snapshot = new List<RaudoAction>();
         }
 
@@ -226,6 +241,26 @@ namespace Raudo
         {
             string normalizedQuery = Normalize(query);
             List<ScoredAction> matches = new List<ScoredAction>();
+            int dynamicCount = 0;
+            if (normalizedQuery.Length > 0 && querySource != null)
+            {
+                IList<RaudoAction> dynamicActions = querySource(query)
+                    ?? new List<RaudoAction>();
+                foreach (RaudoAction action in dynamicActions)
+                {
+                    if (action == null || dynamicCount >= 4)
+                    {
+                        continue;
+                    }
+
+                    matches.Add(new ScoredAction(
+                        action,
+                        -100 + action.SearchPriority,
+                        dynamicCount));
+                    dynamicCount++;
+                }
+            }
+
             for (int index = 0; index < snapshot.Count; index++)
             {
                 RaudoAction action = snapshot[index];
@@ -240,7 +275,7 @@ namespace Raudo
                     matches.Add(new ScoredAction(
                         action,
                         score + action.SearchPriority,
-                        index));
+                        dynamicCount + index));
                 }
             }
 
@@ -366,6 +401,15 @@ namespace Raudo
                             break;
                         case RaudoActionGlyph.Application:
                             DrawApplication(graphics, pen, left, top, scale);
+                            break;
+                        case RaudoActionGlyph.Calculator:
+                            DrawCalculator(graphics, pen, left, top, scale);
+                            break;
+                        case RaudoActionGlyph.Conversion:
+                            DrawConversion(graphics, pen, left, top, scale);
+                            break;
+                        case RaudoActionGlyph.Folder:
+                            DrawFolder(graphics, pen, left, top, scale);
                             break;
                         default:
                             DrawPulse(graphics, pen, left, top, scale);
@@ -540,6 +584,112 @@ namespace Raudo
                 startY + tile + gap,
                 tile,
                 tile);
+        }
+
+        private static void DrawCalculator(
+            Graphics graphics,
+            Pen pen,
+            float left,
+            float top,
+            float scale)
+        {
+            RectangleF body = new RectangleF(
+                left + (5F * scale),
+                top + (2F * scale),
+                14F * scale,
+                20F * scale);
+            graphics.DrawRectangle(pen, body.X, body.Y, body.Width, body.Height);
+            graphics.DrawLine(
+                pen,
+                body.Left + (3F * scale),
+                body.Top + (5F * scale),
+                body.Right - (3F * scale),
+                body.Top + (5F * scale));
+            graphics.DrawLine(
+                pen,
+                body.Left + (4F * scale),
+                body.Top + (11F * scale),
+                body.Left + (8F * scale),
+                body.Top + (11F * scale));
+            graphics.DrawLine(
+                pen,
+                body.Left + (6F * scale),
+                body.Top + (9F * scale),
+                body.Left + (6F * scale),
+                body.Top + (13F * scale));
+            graphics.DrawLine(
+                pen,
+                body.Right - (7F * scale),
+                body.Top + (16F * scale),
+                body.Right - (3F * scale),
+                body.Top + (16F * scale));
+        }
+
+        private static void DrawConversion(
+            Graphics graphics,
+            Pen pen,
+            float left,
+            float top,
+            float scale)
+        {
+            float upperY = top + (8F * scale);
+            float lowerY = top + (16F * scale);
+            graphics.DrawLine(
+                pen,
+                left + (4F * scale),
+                upperY,
+                left + (20F * scale),
+                upperY);
+            graphics.DrawLine(
+                pen,
+                left + (20F * scale),
+                upperY,
+                left + (16F * scale),
+                upperY - (4F * scale));
+            graphics.DrawLine(
+                pen,
+                left + (20F * scale),
+                upperY,
+                left + (16F * scale),
+                upperY + (4F * scale));
+            graphics.DrawLine(
+                pen,
+                left + (20F * scale),
+                lowerY,
+                left + (4F * scale),
+                lowerY);
+            graphics.DrawLine(
+                pen,
+                left + (4F * scale),
+                lowerY,
+                left + (8F * scale),
+                lowerY - (4F * scale));
+            graphics.DrawLine(
+                pen,
+                left + (4F * scale),
+                lowerY,
+                left + (8F * scale),
+                lowerY + (4F * scale));
+        }
+
+        private static void DrawFolder(
+            Graphics graphics,
+            Pen pen,
+            float left,
+            float top,
+            float scale)
+        {
+            PointF[] outline =
+            {
+                new PointF(left + (3F * scale), top + (7F * scale)),
+                new PointF(left + (9F * scale), top + (7F * scale)),
+                new PointF(left + (11F * scale), top + (10F * scale)),
+                new PointF(left + (21F * scale), top + (10F * scale)),
+                new PointF(left + (20F * scale), top + (20F * scale)),
+                new PointF(left + (4F * scale), top + (20F * scale)),
+                new PointF(left + (3F * scale), top + (7F * scale))
+            };
+            graphics.DrawLines(pen, outline);
         }
     }
 }

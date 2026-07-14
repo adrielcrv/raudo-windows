@@ -28,6 +28,7 @@ namespace Raudo
         private readonly MainForm form;
         private readonly VirtualDesktopService virtualDesktopService;
         private readonly InstalledApplicationCatalog installedApplicationCatalog;
+        private readonly QuickResultProvider quickResultProvider;
         private readonly RaudoActionCatalog actionCatalog;
         private readonly GlobalHotKey saltoHotKey;
 
@@ -52,7 +53,10 @@ namespace Raudo
             virtualDesktopService = new VirtualDesktopService();
             installedApplicationCatalog = new InstalledApplicationCatalog();
             installedApplicationCatalog.LoadCompleted += InstalledApplicationsLoadCompleted;
-            actionCatalog = new RaudoActionCatalog(CreateSaltoActions);
+            quickResultProvider = new QuickResultProvider(ClipboardWriter.TryCopy);
+            actionCatalog = new RaudoActionCatalog(
+                CreateSaltoActions,
+                quickResultProvider.CreateActions);
 
             form = new MainForm(keepActiveService, settings, idleIcon);
             form.ToggleRequested += ToggleRequested;
@@ -253,6 +257,11 @@ namespace Raudo
                             delegate { SwitchDesktop(DesktopDirection.Right); }));
                     }
                 }
+            }
+
+            foreach (RaudoAction folderAction in KnownFolderCatalog.CreateActions())
+            {
+                actions.Add(folderAction);
             }
 
             IList<DesktopWindow> windows;

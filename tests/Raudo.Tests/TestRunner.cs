@@ -106,6 +106,51 @@ internal static class TestRunner
             }
 
             if (args.Length == 1
+                && args[0].StartsWith("--capture-salto-calculation-dark=", StringComparison.Ordinal))
+            {
+                CaptureSalto(
+                    args[0].Substring("--capture-salto-calculation-dark=".Length),
+                    true,
+                    "12.5 * 8");
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
+                && args[0].StartsWith("--capture-salto-conversion-light=", StringComparison.Ordinal))
+            {
+                CaptureSalto(
+                    args[0].Substring("--capture-salto-conversion-light=".Length),
+                    false,
+                    "10 km a m");
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
+                && args[0].StartsWith("--capture-salto-folder-dark=", StringComparison.Ordinal))
+            {
+                CaptureSalto(
+                    args[0].Substring("--capture-salto-folder-dark=".Length),
+                    true,
+                    "descargas");
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
+                && args[0].StartsWith("--capture-salto-calculation-dark-150=", StringComparison.Ordinal))
+            {
+                CaptureSaltoScaled(
+                    args[0].Substring("--capture-salto-calculation-dark-150=".Length),
+                    true,
+                    "12.5 * 8",
+                    1.5F);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
                 && args[0].StartsWith("--capture-salto-search-dark-150=", StringComparison.Ordinal))
             {
                 CaptureSaltoScaled(
@@ -120,6 +165,14 @@ internal static class TestRunner
             if (args.Length == 1 && string.Equals(args[0], "--resource-probe-salto", StringComparison.Ordinal))
             {
                 RunSaltoResourceProbe();
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
+                && string.Equals(args[0], "--resource-probe-quick-results", StringComparison.Ordinal))
+            {
+                RunQuickResultsResourceProbe();
                 Console.WriteLine("PASS");
                 return 0;
             }
@@ -468,6 +521,10 @@ internal static class TestRunner
         InstalledApplicationCatalog applications = new InstalledApplicationCatalog();
         applications.LoadNowForTesting();
         IList<InstalledApplication> applicationSnapshot = applications.GetSnapshot();
+        QuickResultProvider quickResults = new QuickResultProvider(delegate
+        {
+            return null;
+        });
         RaudoActionCatalog catalog = new RaudoActionCatalog(delegate
         {
             List<RaudoAction> actions = new List<RaudoAction>();
@@ -496,15 +553,19 @@ internal static class TestRunner
             }
 
             return actions;
-        });
+        }, quickResults.CreateActions);
 
         using (SaltoForm form = new SaltoForm(catalog))
         using (Process process = Process.GetCurrentProcess())
         {
             form.ShowSalto();
+            form.SetQueryForTesting("12.5 * 8");
             Application.DoEvents();
             Thread.Sleep(220);
             Application.DoEvents();
+            Assert(
+                form.SelectedActionIdForTesting == "quick.calculation",
+                "El catálogo completo no priorizó el resultado rápido.");
             GC.Collect();
             GC.WaitForPendingFinalizers();
             GC.Collect();
@@ -539,9 +600,14 @@ internal static class TestRunner
 
     private static RaudoActionCatalog CreateTestActionCatalog(Action invoked)
     {
+        Action execute = invoked ?? delegate { };
+        QuickResultProvider quickResults = new QuickResultProvider(delegate(string value)
+        {
+            execute();
+            return null;
+        });
         return new RaudoActionCatalog(delegate
         {
-            Action execute = invoked ?? delegate { };
             return new List<RaudoAction>
             {
                 new RaudoAction(
@@ -577,6 +643,21 @@ internal static class TestRunner
                     RaudoActionGlyph.Mini,
                     execute),
                 new RaudoAction(
+                    "known-folder:downloads",
+                    "Descargas",
+                    "Carpeta local de Windows",
+                    "downloads descargas archivos carpeta",
+                    "Abrir",
+                    RaudoActionGlyph.Folder,
+                    RaudoActionKind.Folder,
+                    false,
+                    5,
+                    delegate
+                    {
+                        execute();
+                        return null;
+                    }),
+                new RaudoAction(
                     "open-window:1234",
                     "Excel — Presupuesto trimestral.xlsx",
                     "Ventana · Otro escritorio",
@@ -607,7 +688,54 @@ internal static class TestRunner
                         return null;
                     })
             };
-        });
+        }, quickResults.CreateActions);
+    }
+
+    private static void RunQuickResultsResourceProbe()
+    {
+        Application.EnableVisualStyles();
+        Application.SetCompatibleTextRenderingDefault(false);
+        RaudoActionCatalog catalog = CreateTestActionCatalog(null);
+        using (SaltoForm form = new SaltoForm(catalog))
+        using (Process process = Process.GetCurrentProcess())
+        {
+            form.ShowSalto();
+            form.SetQueryForTesting("12.5 * 8");
+            Application.DoEvents();
+            Thread.Sleep(220);
+            Application.DoEvents();
+            Assert(
+                form.SelectedActionIdForTesting == "quick.calculation",
+                "El resultado rápido no quedó visible durante la prueba de recursos.");
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+
+            TimeSpan cpuBefore = process.TotalProcessorTime;
+            Stopwatch elapsed = Stopwatch.StartNew();
+            while (elapsed.Elapsed < TimeSpan.FromSeconds(5))
+            {
+                Application.DoEvents();
+                Thread.Sleep(50);
+            }
+
+            elapsed.Stop();
+            process.Refresh();
+            TimeSpan cpuUsed = process.TotalProcessorTime - cpuBefore;
+            double normalizedCpuPercent = cpuUsed.TotalMilliseconds
+                / elapsed.Elapsed.TotalMilliseconds
+                / Math.Max(1, Environment.ProcessorCount)
+                * 100D;
+            Console.WriteLine(
+                "Resultados rápidos: CPU {0:F3}% · Working set {1:F1} MB · Private {2:F1} MB",
+                normalizedCpuPercent,
+                process.WorkingSet64 / 1024D / 1024D,
+                process.PrivateMemorySize64 / 1024D / 1024D);
+            Assert(
+                normalizedCpuPercent < 1D,
+                "Los resultados rápidos excedieron 1% de CPU en reposo.");
+            form.AllowCloseAndClose();
+        }
     }
 
     private static void RunApplicationCatalogProbe()
@@ -862,7 +990,7 @@ internal static class TestRunner
 
         RaudoActionCatalog actionCatalog = CreateTestActionCatalog(null);
         actionCatalog.Refresh();
-        Assert(actionCatalog.Count == 6, "El catálogo no cargó todos los resultados.");
+        Assert(actionCatalog.Count == 7, "El catálogo no cargó todos los resultados.");
         Assert(
             actionCatalog.Search(string.Empty).Count == 4,
             "La consulta vacía mostró resultados dinámicos.");
@@ -881,6 +1009,162 @@ internal static class TestRunner
         Assert(
             actionCatalog.Search("sin coincidencia").Count == 0,
             "Una búsqueda desconocida devolvió acciones.");
+
+        decimal arithmeticResult;
+        Assert(
+            ArithmeticParser.TryEvaluate("2 + 3 * 4", out arithmeticResult)
+                && arithmeticResult == 14M,
+            "El cálculo no respetó la precedencia de operadores.");
+        Assert(
+            ArithmeticParser.TryEvaluate("(2 + 3) * 4", out arithmeticResult)
+                && arithmeticResult == 20M,
+            "El cálculo no respetó los paréntesis.");
+        Assert(
+            ArithmeticParser.TryEvaluate("-5 + 2", out arithmeticResult)
+                && arithmeticResult == -3M,
+            "El cálculo no aceptó signos unarios.");
+        Assert(
+            ArithmeticParser.TryEvaluate("1,5 + 2.25", out arithmeticResult)
+                && arithmeticResult == 3.75M,
+            "El cálculo no aceptó separadores decimales locales.");
+        Assert(
+            !ArithmeticParser.TryEvaluate("42", out arithmeticResult),
+            "Un número aislado se presentó como cálculo.");
+        Assert(
+            !ArithmeticParser.TryEvaluate("1 / 0", out arithmeticResult),
+            "La división entre cero produjo un resultado.");
+        Assert(
+            !ArithmeticParser.TryEvaluate("abrir 2 + 2", out arithmeticResult),
+            "Texto ajeno se interpretó como cálculo.");
+        string excessiveDepth = new string('(', 17) + "1 + 1" + new string(')', 17);
+        Assert(
+            !ArithmeticParser.TryEvaluate(excessiveDepth, out arithmeticResult),
+            "El cálculo excedió el límite de profundidad.");
+
+        string conversionValue;
+        string conversionDescription;
+        Assert(
+            QuickResultProvider.TryConvert(
+                "1 km a m",
+                out conversionValue,
+                out conversionDescription)
+                && conversionValue == "1000 m",
+            "La conversión de longitud no fue correcta.");
+        Assert(
+            QuickResultProvider.TryConvert(
+                "32 f a c",
+                out conversionValue,
+                out conversionDescription)
+                && conversionValue == "0 °C",
+            "La conversión de temperatura no fue correcta.");
+        Assert(
+            QuickResultProvider.TryConvert(
+                "1 gb a mb",
+                out conversionValue,
+                out conversionDescription)
+                && conversionValue == "1024 MB",
+            "La conversión de almacenamiento no fue correcta.");
+        Assert(
+            QuickResultProvider.TryConvert(
+                "2 horas en min",
+                out conversionValue,
+                out conversionDescription)
+                && conversionValue == "120 min",
+            "La conversión con alias en español no fue correcta.");
+        Assert(
+            !QuickResultProvider.TryConvert(
+                "10 kg a km",
+                out conversionValue,
+                out conversionDescription),
+            "Se permitió una conversión entre familias distintas.");
+
+        string copiedValue = null;
+        QuickResultProvider provider = new QuickResultProvider(delegate(string value)
+        {
+            copiedValue = value;
+            return null;
+        });
+        IList<RaudoAction> calculationActions = provider.CreateActions("12.5 * 8");
+        Assert(
+            calculationActions.Count == 1
+                && calculationActions[0].Kind == RaudoActionKind.Calculation,
+            "La consulta no produjo un único resultado de cálculo.");
+        Assert(
+            string.IsNullOrWhiteSpace(calculationActions[0].Execute())
+                && copiedValue == "100",
+            "La acción de cálculo no copió el valor esperado.");
+        Assert(
+            actionCatalog.Search("12.5 * 8")[0].Id == "quick.calculation",
+            "El resultado calculado no tuvo prioridad en Salto.");
+        Assert(
+            actionCatalog.Search("10 km a m")[0].Id == "quick.conversion",
+            "El resultado convertido no tuvo prioridad en Salto.");
+
+        IList<KnownFolderEntry> knownFolders = KnownFolderCatalog.GetFolders();
+        Assert(knownFolders.Count > 0, "Windows no devolvió carpetas conocidas.");
+        HashSet<string> knownFolderPaths =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (KnownFolderEntry folder in knownFolders)
+        {
+            Assert(
+                Path.IsPathRooted(folder.Path) && Directory.Exists(folder.Path),
+                "Una carpeta conocida no resolvió a un directorio absoluto existente.");
+            Assert(
+                knownFolderPaths.Add(folder.Path),
+                "El catálogo repitió una carpeta conocida.");
+        }
+
+        IList<RaudoAction> knownFolderActions = KnownFolderCatalog.CreateActions();
+        Assert(
+            knownFolderActions.Count == knownFolders.Count,
+            "Las carpetas conocidas no se convirtieron en acciones.");
+        Assert(
+            knownFolderActions[0].Kind == RaudoActionKind.Folder
+                && !knownFolderActions[0].ShowWhenQueryEmpty,
+            "Una carpeta conocida apareció sin consulta.");
+        RaudoActionCatalog folderCatalog = new RaudoActionCatalog(delegate
+        {
+            return KnownFolderCatalog.CreateActions();
+        });
+        folderCatalog.Refresh();
+        Assert(
+            folderCatalog.Search(knownFolderActions[0].Title).Count > 0
+                && folderCatalog.Search(knownFolderActions[0].Title)[0].Kind
+                    == RaudoActionKind.Folder,
+            "Salto no encontró una carpeta conocida por su nombre.");
+        Assert(
+            !string.IsNullOrWhiteSpace(FolderLauncher.TryOpen(
+                Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N")))),
+            "El lanzador aceptó una carpeta inexistente.");
+        string remoteFolder;
+        Assert(
+            !LocalFolderPolicy.TryNormalizeExistingDirectory(
+                @"\\servidor-inexistente\carpeta",
+                out remoteFolder),
+            "La política local aceptó una ruta de red.");
+
+        RaudoActionCatalog boundedCatalog = new RaudoActionCatalog(delegate
+        {
+            List<RaudoAction> manyActions = new List<RaudoAction>();
+            for (int index = 0; index < 20; index++)
+            {
+                manyActions.Add(new RaudoAction(
+                    "item:" + index,
+                    "Elemento " + index,
+                    "Resultado de prueba",
+                    "elemento",
+                    string.Empty,
+                    RaudoActionGlyph.Application,
+                    delegate { }));
+            }
+
+            return manyActions;
+        });
+        boundedCatalog.Refresh();
+        Assert(
+            boundedCatalog.Search("elemento").Count == 12,
+            "La consulta dejó de limitarse a doce resultados.");
+
         int actionInvocationCount = 0;
         RaudoActionCatalog executableCatalog = CreateTestActionCatalog(
             delegate { actionInvocationCount++; });
@@ -925,6 +1209,17 @@ internal static class TestRunner
             Assert(
                 salto.SelectedActionIdForTesting == "capture.screen",
                 "Salto no seleccionó el primer resultado.");
+            Assert(
+                salto.KeyboardHintForTesting.EndsWith("ejecutar", StringComparison.Ordinal),
+                "La ayuda de teclado no describió una acción de Raudo.");
+            salto.SetQueryForTesting("12.5 * 8");
+            Assert(
+                salto.ResultCountForTesting == 1
+                    && salto.SelectedActionIdForTesting == "quick.calculation",
+                "Salto no presentó el cálculo como resultado seleccionable.");
+            Assert(
+                salto.KeyboardHintForTesting.EndsWith("copiar", StringComparison.Ordinal),
+                "La ayuda de teclado no describió la copia del resultado.");
             AssertAccessibleControls(salto);
             ScaleToTargetDpi(salto, 144);
             AssertControlsWithinParent(salto);
