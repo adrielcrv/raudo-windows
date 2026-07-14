@@ -4,7 +4,9 @@
 
 Los candidatos de publicación se compilan en GitHub Actions, incluyen hashes SHA-256 y generan una atestación de procedencia. Un artefacto de workflow no se presenta como versión estable.
 
-La primera versión estable permanecerá como borrador hasta contar con una ruta de firma de código verificable. La opción prevista es solicitar el programa gratuito de SignPath Foundation para proyectos de código abierto. La aceptación no está garantizada y no se afirmará que un binario está firmado hasta verificar su cadena y timestamp.
+Los ejecutables públicos actuales no tienen firma Authenticode. Windows puede mostrar una advertencia de reputación para una descarga nueva; esto no se presenta como garantía de seguridad ni como detección de malware. Antes de publicar, la versión estable se reconstruye desde el commit integrado, conserva la suma SHA-256 generada por el workflow y se acompaña de una atestación verificable de GitHub.
+
+La ruta prevista para Authenticode es solicitar un programa de firma para proyectos de código abierto. No se afirmará que un binario está firmado hasta verificar su cadena, identidad y timestamp en el asset publicado.
 
 ## Procedencia
 

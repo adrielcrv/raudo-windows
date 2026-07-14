@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Win32;
 
@@ -16,9 +17,14 @@ namespace Raudo
         private readonly ContextMenuStrip trayMenu;
         private readonly ToolStripMenuItem statusItem;
         private readonly ToolStripMenuItem saltoItem;
+        private readonly ToolStripMenuItem voiceItem;
         private readonly ToolStripMenuItem toggleItem;
         private readonly ToolStripMenuItem durationMenu;
         private readonly ToolStripMenuItem mediaMenu;
+        private readonly ToolStripMenuItem desktopMenu;
+        private readonly ToolStripSeparator desktopNavigationSeparator;
+        private readonly ToolStripMenuItem desktopLeftItem;
+        private readonly ToolStripMenuItem desktopRightItem;
         private readonly ToolStripMenuItem startupItem;
         private readonly ToolStripMenuItem miniModeItem;
         private readonly System.Windows.Forms.Timer reminderRetryTimer;
@@ -33,13 +39,19 @@ namespace Raudo
         private readonly MediaControlService mediaControlService;
         private readonly RaudoActionCatalog actionCatalog;
         private readonly GlobalHotKey saltoHotKey;
+        private readonly GlobalHotKey voiceHotKey;
+        private readonly VoiceRecognitionService voiceRecognitionService;
 
         private MiniForm miniForm;
         private SaltoForm saltoForm;
+        private VoiceOverlayForm voiceOverlayForm;
+        private DesktopGuideForm desktopGuideForm;
         private ConnectedMinimizeTransition minimizeTransition;
         private KeepActivePhase? pendingReminder;
         private DateTime pendingReminderExpiresUtc;
         private KeepActivePhase observedPhase;
+        private bool voiceSessionActive;
+        private int voiceSessionVersion;
 
         private bool exiting;
 
@@ -57,6 +69,8 @@ namespace Raudo
             installedApplicationCatalog.LoadCompleted += InstalledApplicationsLoadCompleted;
             quickResultProvider = new QuickResultProvider(ClipboardWriter.TryCopy);
             mediaControlService = new MediaControlService();
+            voiceRecognitionService = new VoiceRecognitionService();
+            voiceRecognitionService.PhaseChanged += VoiceRecognitionPhaseChanged;
             actionCatalog = new RaudoActionCatalog(
                 CreateSaltoActions,
                 quickResultProvider.CreateActions);
@@ -65,6 +79,8 @@ namespace Raudo
             form.ToggleRequested += ToggleRequested;
             form.DurationChanged += DurationChanged;
             form.ScreenCaptureRequested += ScreenCaptureRequested;
+            form.DesktopCreateRequested += DesktopCreateRequested;
+            form.DesktopGuideRequested += DesktopGuideRequested;
             form.StartupChanged += StartupChanged;
             form.MiniModeChanged += MiniModeChanged;
             form.MinimizeRequested += MainFormMinimizeRequested;
@@ -83,6 +99,11 @@ namespace Raudo
             saltoItem.ShortcutKeyDisplayString = "Ctrl + Alt + Espacio";
             saltoItem.Click += delegate { ShowSalto(); };
             trayMenu.Items.Add(saltoItem);
+
+            voiceItem = new ToolStripMenuItem("Hablar con Raudo");
+            voiceItem.ShortcutKeyDisplayString = "Ctrl + Alt + V";
+            voiceItem.Click += delegate { ToggleVoiceSession(); };
+            trayMenu.Items.Add(voiceItem);
             trayMenu.Items.Add(new ToolStripSeparator());
 
             toggleItem = new ToolStripMenuItem();
@@ -106,6 +127,32 @@ namespace Raudo
             AddMediaMenuItems();
             trayMenu.Items.Add(mediaMenu);
 
+            desktopMenu = new ToolStripMenuItem("Escritorios de trabajo");
+            desktopMenu.Enabled = virtualDesktopService.IsAvailable;
+            ToolStripMenuItem createDesktopItem = new ToolStripMenuItem("Crear nuevo escritorio");
+            createDesktopItem.ShortcutKeyDisplayString = "Ctrl + Win + D";
+            createDesktopItem.Click += DesktopCreateRequested;
+            desktopMenu.DropDownItems.Add(createDesktopItem);
+            ToolStripMenuItem overviewDesktopItem = new ToolStripMenuItem("Vista de escritorios");
+            overviewDesktopItem.ShortcutKeyDisplayString = "Win + Tab";
+            overviewDesktopItem.Click += DesktopOverviewRequested;
+            desktopMenu.DropDownItems.Add(overviewDesktopItem);
+            desktopNavigationSeparator = new ToolStripSeparator();
+            desktopMenu.DropDownItems.Add(desktopNavigationSeparator);
+            desktopLeftItem = new ToolStripMenuItem("Escritorio anterior");
+            desktopLeftItem.ShortcutKeyDisplayString = "Ctrl + Win + ←";
+            desktopLeftItem.Click += delegate { SwitchDesktop(DesktopDirection.Left); };
+            desktopMenu.DropDownItems.Add(desktopLeftItem);
+            desktopRightItem = new ToolStripMenuItem("Escritorio siguiente");
+            desktopRightItem.ShortcutKeyDisplayString = "Ctrl + Win + →";
+            desktopRightItem.Click += delegate { SwitchDesktop(DesktopDirection.Right); };
+            desktopMenu.DropDownItems.Add(desktopRightItem);
+            desktopMenu.DropDownItems.Add(new ToolStripSeparator());
+            ToolStripMenuItem desktopGuideItem = new ToolStripMenuItem("Cómo funcionan…");
+            desktopGuideItem.Click += DesktopGuideRequested;
+            desktopMenu.DropDownItems.Add(desktopGuideItem);
+            trayMenu.Items.Add(desktopMenu);
+
             miniModeItem = new ToolStripMenuItem("Modo Mini");
             miniModeItem.CheckOnClick = true;
             miniModeItem.Checked = settings.MiniModeEnabled;
@@ -125,7 +172,7 @@ namespace Raudo
             trayMenu.Items.Add(new ToolStripSeparator());
 
             ToolStripMenuItem exitItem = new ToolStripMenuItem("Salir de Raudo");
-            exitItem.Click += delegate { ExitThread(); };
+            exitItem.Click += ExitMenuItemClick;
             trayMenu.Items.Add(exitItem);
 
             notifyIcon = new NotifyIcon();
@@ -154,6 +201,17 @@ namespace Raudo
                 saltoItem.ShortcutKeyDisplayString = "Atajo no disponible";
             }
 
+            voiceHotKey = new GlobalHotKey(
+                HotKeyModifiers.Control
+                    | HotKeyModifiers.Alt
+                    | HotKeyModifiers.NoRepeat,
+                Keys.V);
+            voiceHotKey.Pressed += VoiceHotKeyPressed;
+            if (!voiceHotKey.IsRegistered)
+            {
+                voiceItem.ShortcutKeyDisplayString = "Atajo no disponible";
+            }
+
             showRequestRegistration = ThreadPool.RegisterWaitForSingleObject(
                 showRequestEvent,
                 ShowRequestSignaled,
@@ -166,6 +224,7 @@ namespace Raudo
             SystemEvents.UserPreferenceChanged += SystemUserPreferenceChanged;
             SystemEvents.DisplaySettingsChanged += SystemDisplaySettingsChanged;
 
+            RestorePulseSession();
             UpdatePresentation();
             if (settings.MiniModeEnabled && virtualDesktopService.IsAvailable)
             {
@@ -210,6 +269,17 @@ namespace Raudo
             bool active = keepActiveService.IsActive;
             string duration = DurationOption.GetLabel(settings.DurationMinutes).ToLowerInvariant();
             actions.Add(new RaudoAction(
+                "voice.listen",
+                "Hablar con Raudo",
+                "Una orden en español · procesamiento local",
+                "voz hablar microfono escuchar comando local",
+                voiceHotKey != null && voiceHotKey.IsRegistered
+                    ? "Ctrl + Alt + V"
+                    : string.Empty,
+                RaudoActionGlyph.Voice,
+                delegate { ToggleVoiceSession(); }));
+
+            actions.Add(new RaudoAction(
                 "pulse.toggle",
                 active ? "Detener Pulso" : "Iniciar Pulso",
                 active
@@ -241,6 +311,33 @@ namespace Raudo
 
             if (virtualDesktopService.IsAvailable)
             {
+                actions.Add(new RaudoAction(
+                    "desktop.create",
+                    "Crear escritorio de trabajo",
+                    "Abrir un espacio separado y cambiar a él",
+                    "crear nuevo escritorio espacio proyecto trabajo separar",
+                    "Ctrl + Win + D",
+                    RaudoActionGlyph.DesktopAdd,
+                    CreateDesktop));
+
+                actions.Add(new RaudoAction(
+                    "desktop.overview",
+                    "Vista de escritorios",
+                    "Ver todos los espacios y sus ventanas",
+                    "vista escritorios ventanas task overview mostrar",
+                    "Win + Tab",
+                    RaudoActionGlyph.DesktopOverview,
+                    OpenDesktopOverview));
+
+                actions.Add(new RaudoAction(
+                    "desktop.guide",
+                    "Cómo funcionan los escritorios",
+                    "Separar proyectos, cambiar y traer ventanas",
+                    "ayuda guia escritorios aprender separar proyectos ventanas",
+                    string.Empty,
+                    RaudoActionGlyph.DesktopOverview,
+                    delegate { ShowDesktopGuide(false); }));
+
                 actions.Add(new RaudoAction(
                     "mini.toggle",
                     settings.MiniModeEnabled ? "Ocultar Modo Mini" : "Mostrar Modo Mini",
@@ -328,11 +425,14 @@ namespace Raudo
             foreach (InstalledApplication rawApplication in installed)
             {
                 InstalledApplication application = rawApplication;
+                string aliases = application.Aliases == null
+                    ? string.Empty
+                    : string.Join(" ", application.Aliases);
                 actions.Add(new RaudoAction(
                     "open-application:" + application.Identifier,
                     application.Name,
                     "Aplicación instalada",
-                    "aplicacion programa iniciar abrir " + application.Name,
+                    "aplicacion programa iniciar abrir " + application.Name + " " + aliases,
                     "Abrir",
                     RaudoActionGlyph.Application,
                     RaudoActionKind.Application,
@@ -499,6 +599,16 @@ namespace Raudo
             ExitThread();
         }
 
+        private void ExitMenuItemClick(object sender, EventArgs eventArgs)
+        {
+            if (keepActiveService.IsActive)
+            {
+                keepActiveService.Stop("Detenido al salir");
+            }
+
+            ExitThread();
+        }
+
         private void MiniModeMenuItemClick(object sender, EventArgs eventArgs)
         {
             SetMiniMode(miniModeItem.Checked, true);
@@ -594,11 +704,22 @@ namespace Raudo
         private void TrayMenuOpening(object sender, System.ComponentModel.CancelEventArgs eventArgs)
         {
             miniModeItem.Checked = settings.MiniModeEnabled;
+            bool canNavigateLeft;
+            bool canNavigateRight;
+            bool hasDesktopState = virtualDesktopService.TryGetNavigationAvailability(
+                out canNavigateLeft,
+                out canNavigateRight);
+            desktopLeftItem.Visible = hasDesktopState && canNavigateLeft;
+            desktopRightItem.Visible = hasDesktopState && canNavigateRight;
+            desktopNavigationSeparator.Visible = desktopLeftItem.Visible
+                || desktopRightItem.Visible;
             UpdatePresentation();
         }
 
         private void KeepActiveServiceStateChanged(object sender, EventArgs eventArgs)
         {
+            PersistPulseSession();
+
             if (keepActiveService.Phase != observedPhase)
             {
                 ClearPendingReminder();
@@ -606,6 +727,43 @@ namespace Raudo
             }
 
             UpdatePresentation();
+        }
+
+        private void RestorePulseSession()
+        {
+            long storedExpiration = settings.PulseActiveUntilUtcTicks;
+            if (storedExpiration == 0)
+            {
+                return;
+            }
+
+            DateTime expirationUtc;
+            if (PulseSessionState.TryGetRestorableExpiration(
+                    storedExpiration,
+                    DateTime.UtcNow,
+                    out expirationUtc)
+                && keepActiveService.TryResume(expirationUtc))
+            {
+                return;
+            }
+
+            settings.PulseActiveUntilUtcTicks = 0;
+            SaveSettings();
+        }
+
+        private void PersistPulseSession()
+        {
+            DateTime? expirationUtc = keepActiveService.ActiveUntilUtc;
+            long currentExpiration = expirationUtc.HasValue
+                ? expirationUtc.Value.Ticks
+                : 0;
+            if (settings.PulseActiveUntilUtcTicks == currentExpiration)
+            {
+                return;
+            }
+
+            settings.PulseActiveUntilUtcTicks = currentExpiration;
+            SaveSettings();
         }
 
         private void KeepActiveServiceAttentionRequired(
@@ -654,6 +812,14 @@ namespace Raudo
                         saltoForm.HideSalto();
                     }
 
+                    voiceSessionVersion++;
+                    voiceSessionActive = false;
+                    voiceRecognitionService.Cancel();
+                    if (voiceOverlayForm != null)
+                    {
+                        voiceOverlayForm.HideOverlay();
+                    }
+
                     if (keepActiveService.IsActive)
                     {
                         keepActiveService.Stop("Detenido al cerrar la sesión interactiva");
@@ -679,6 +845,14 @@ namespace Raudo
             {
                 RunOnUiThread(delegate
                 {
+                    voiceSessionVersion++;
+                    voiceSessionActive = false;
+                    voiceRecognitionService.Cancel();
+                    if (voiceOverlayForm != null)
+                    {
+                        voiceOverlayForm.HideOverlay();
+                    }
+
                     if (keepActiveService.IsActive)
                     {
                         keepActiveService.Stop("Detenido al suspender Windows");
@@ -705,6 +879,16 @@ namespace Raudo
                     {
                         miniForm.ApplyTheme(current);
                     }
+
+                    if (voiceOverlayForm != null)
+                    {
+                        voiceOverlayForm.ApplyTheme(current);
+                    }
+
+                    if (desktopGuideForm != null)
+                    {
+                        desktopGuideForm.ApplyTheme(current);
+                    }
                 });
             }
         }
@@ -721,6 +905,18 @@ namespace Raudo
                 if (saltoForm != null)
                 {
                     saltoForm.EnsureVisibleOnScreen();
+                }
+
+                if (desktopGuideForm != null && desktopGuideForm.Visible)
+                {
+                    EnsureTransientWindowOnCurrentDesktop(
+                        desktopGuideForm,
+                        "Mostrar la guía de escritorios");
+                }
+
+                if (voiceOverlayForm != null)
+                {
+                    voiceOverlayForm.EnsureVisibleOnScreen();
                 }
             });
         }
@@ -743,7 +939,10 @@ namespace Raudo
 
         private void ShowWindow()
         {
-            if (!exiting)
+            if (!exiting
+                && EnsureTransientWindowOnCurrentDesktop(
+                    form,
+                    "Abrir Raudo"))
             {
                 form.ShowFromTray();
             }
@@ -757,11 +956,599 @@ namespace Raudo
             }
 
             EnsureSaltoForm();
+            if (!EnsureTransientWindowOnCurrentDesktop(
+                saltoForm,
+                "Abrir Salto"))
+            {
+                return;
+            }
+
             installedApplicationCatalog.EnsureLoading();
             saltoForm.SetApplicationCatalogState(
                 installedApplicationCatalog.IsLoading,
                 installedApplicationCatalog.LoadError);
             saltoForm.ShowSalto();
+        }
+
+        private bool EnsureTransientWindowOnCurrentDesktop(Form target, string action)
+        {
+            if (target == null || target.IsDisposed)
+            {
+                ShowDesktopWarning(action + " no está disponible en este momento.");
+                return false;
+            }
+
+            if (!virtualDesktopService.IsAvailable)
+            {
+                return true;
+            }
+
+            IntPtr handle = target.Handle;
+            string error;
+            if (virtualDesktopService.TryMoveWindowToCurrentDesktop(handle, out error))
+            {
+                return true;
+            }
+
+            ShowDesktopWarning(
+                (error ?? "Windows no permitió mover Raudo al escritorio actual.")
+                    + " La acción se canceló para no abrirse en otro escritorio.");
+            return false;
+        }
+
+        private void ShowDesktopGuide(bool created)
+        {
+            if (exiting)
+            {
+                return;
+            }
+
+            EnsureDesktopGuideForm();
+            if (!EnsureTransientWindowOnCurrentDesktop(
+                desktopGuideForm,
+                "Mostrar la guía de escritorios"))
+            {
+                return;
+            }
+
+            if (created)
+            {
+                desktopGuideForm.ShowCreated();
+            }
+            else
+            {
+                desktopGuideForm.ShowIntroduction();
+            }
+        }
+
+        private void EnsureDesktopGuideForm()
+        {
+            if (desktopGuideForm == null || desktopGuideForm.IsDisposed)
+            {
+                desktopGuideForm = new DesktopGuideForm(idleIcon);
+                desktopGuideForm.CreateRequested += DesktopCreateRequested;
+                desktopGuideForm.ApplyTheme(ThemeService.Current());
+            }
+        }
+
+        private async void ToggleVoiceSession()
+        {
+            if (exiting)
+            {
+                return;
+            }
+
+            if (voiceSessionActive || voiceRecognitionService.IsListening)
+            {
+                voiceSessionVersion++;
+                voiceSessionActive = false;
+                voiceRecognitionService.Cancel();
+                if (voiceOverlayForm != null)
+                {
+                    voiceOverlayForm.HideOverlay();
+                }
+
+                return;
+            }
+
+            VoiceAvailability availability = VoiceRecognitionService.GetAvailability();
+            EnsureVoiceOverlayForm();
+            if (!EnsureTransientWindowOnCurrentDesktop(
+                voiceOverlayForm,
+                "Escuchar una orden"))
+            {
+                return;
+            }
+
+            if (!availability.IsAvailable)
+            {
+                voiceOverlayForm.ShowState(
+                    VoiceOverlayState.Unavailable,
+                    "Voz no disponible",
+                    availability.Message);
+                voiceOverlayForm.DismissAfter(6000);
+                return;
+            }
+
+            voiceSessionActive = true;
+            int sessionVersion = ++voiceSessionVersion;
+            voiceOverlayForm.ShowState(
+                VoiceOverlayState.Preparing,
+                "Preparando voz...",
+                "Español (México) · procesamiento local");
+
+            installedApplicationCatalog.EnsureLoading();
+            for (int attempt = 0;
+                attempt < 30
+                    && installedApplicationCatalog.IsLoading
+                    && sessionVersion == voiceSessionVersion;
+                attempt++)
+            {
+                await Task.Delay(100);
+            }
+
+            if (exiting || sessionVersion != voiceSessionVersion)
+            {
+                return;
+            }
+
+            IList<InstalledApplication> applications =
+                installedApplicationCatalog.GetSnapshot();
+            VoiceRecognitionOutcome outcome = await voiceRecognitionService
+                .ListenSessionAsync(
+                    applications,
+                    2,
+                    delegate(VoiceRecognitionOutcome candidate)
+                    {
+                        return VoiceSessionPolicy.ShouldRetry(candidate, applications);
+                    },
+                    delegate(VoiceRecognitionOutcome candidate, int nextAttempt)
+                    {
+                        ShowVoiceRetry(
+                            sessionVersion,
+                            candidate,
+                            applications,
+                            nextAttempt);
+                    });
+            if (exiting || sessionVersion != voiceSessionVersion)
+            {
+                return;
+            }
+
+            voiceSessionActive = false;
+            PresentVoiceOutcome(outcome);
+        }
+
+        private void ShowVoiceRetry(
+            int sessionVersion,
+            VoiceRecognitionOutcome outcome,
+            IList<InstalledApplication> applications,
+            int nextAttempt)
+        {
+            RunOnUiThread(delegate
+            {
+                if (exiting
+                    || !voiceSessionActive
+                    || sessionVersion != voiceSessionVersion)
+                {
+                    return;
+                }
+
+                EnsureVoiceOverlayForm();
+                if (!EnsureTransientWindowOnCurrentDesktop(
+                    voiceOverlayForm,
+                    "Reintentar la orden de voz"))
+                {
+                    return;
+                }
+
+                voiceOverlayForm.ShowState(
+                    VoiceOverlayState.NotUnderstood,
+                    "No entendí · intento " + nextAttempt + " de 2",
+                    VoiceSessionPolicy.DescribeRetry(outcome, applications));
+            });
+        }
+
+        private void VoiceHotKeyPressed(object sender, EventArgs eventArgs)
+        {
+            ToggleVoiceSession();
+        }
+
+        private void VoiceRecognitionPhaseChanged(
+            object sender,
+            VoiceRecognitionPhaseEventArgs eventArgs)
+        {
+            RunOnUiThread(delegate
+            {
+                if (!voiceSessionActive)
+                {
+                    return;
+                }
+
+                EnsureVoiceOverlayForm();
+                if (!EnsureTransientWindowOnCurrentDesktop(
+                    voiceOverlayForm,
+                    "Mostrar el estado de voz"))
+                {
+                    return;
+                }
+
+                if (eventArgs.Phase == VoiceRecognitionPhase.Listening)
+                {
+                    voiceOverlayForm.ShowState(
+                        VoiceOverlayState.Listening,
+                        "Escuchando...",
+                        "Prueba “abre Excel” o “cuánto es 12 por 8”.");
+                }
+                else
+                {
+                    voiceOverlayForm.ShowState(
+                        VoiceOverlayState.Preparing,
+                        "Preparando voz...",
+                        "Windows está cargando las órdenes locales.");
+                }
+            });
+        }
+
+        private void PresentVoiceOutcome(VoiceRecognitionOutcome outcome)
+        {
+            EnsureVoiceOverlayForm();
+            if (!EnsureTransientWindowOnCurrentDesktop(
+                voiceOverlayForm,
+                "Mostrar el resultado de voz"))
+            {
+                return;
+            }
+
+            switch (outcome.Kind)
+            {
+                case VoiceRecognitionOutcomeKind.Cancelled:
+                    voiceOverlayForm.HideOverlay();
+                    return;
+                case VoiceRecognitionOutcomeKind.Unavailable:
+                    voiceOverlayForm.ShowState(
+                        VoiceOverlayState.Unavailable,
+                        "Voz no disponible",
+                        outcome.Message);
+                    voiceOverlayForm.DismissAfter(6000);
+                    return;
+                case VoiceRecognitionOutcomeKind.Error:
+                    voiceOverlayForm.ShowState(
+                        VoiceOverlayState.Unavailable,
+                        "No se pudo escuchar",
+                        outcome.Message);
+                    voiceOverlayForm.DismissAfter(5000);
+                    return;
+                case VoiceRecognitionOutcomeKind.NotUnderstood:
+                    voiceOverlayForm.ShowState(
+                        VoiceOverlayState.NotUnderstood,
+                        "No entendí esa orden",
+                        string.IsNullOrWhiteSpace(outcome.Text)
+                            ? outcome.Message
+                            : "Escuché “" + outcome.Text + "”. Intenta de nuevo.");
+                    voiceOverlayForm.DismissAfter(4500);
+                    return;
+            }
+
+            VoiceCommand command = VoiceCommandParser.Parse(
+                outcome.Text,
+                installedApplicationCatalog.GetSnapshot());
+            if (!command.IsRecognized)
+            {
+                voiceOverlayForm.ShowState(
+                    VoiceOverlayState.NotUnderstood,
+                    command.Title,
+                    command.Detail);
+                voiceOverlayForm.DismissAfter(4500);
+                return;
+            }
+
+            ExecuteVoiceCommand(command);
+        }
+
+        private async void ExecuteVoiceCommand(VoiceCommand command)
+        {
+            if (!EnsureTransientWindowOnCurrentDesktop(
+                voiceOverlayForm,
+                "Ejecutar la orden de voz"))
+            {
+                return;
+            }
+
+            string error = null;
+            switch (command.Kind)
+            {
+                case VoiceCommandKind.OpenApplication:
+                    error = InstalledApplicationLauncher.TryLaunch(
+                        command.ApplicationIdentifier);
+                    break;
+                case VoiceCommandKind.OpenYouTube:
+                    error = BrowserLauncher.TryOpenYouTube();
+                    break;
+                case VoiceCommandKind.OpenWeather:
+                    error = BrowserLauncher.TryOpenWeather();
+                    break;
+                case VoiceCommandKind.OpenSalto:
+                    voiceOverlayForm.HideOverlay();
+                    ShowSalto();
+                    return;
+                case VoiceCommandKind.OpenRaudo:
+                    voiceOverlayForm.HideOverlay();
+                    ShowWindow();
+                    return;
+                case VoiceCommandKind.StartPulse:
+                    if (!keepActiveService.IsActive)
+                    {
+                        keepActiveService.Start(settings.DurationMinutes);
+                    }
+                    break;
+                case VoiceCommandKind.StopPulse:
+                    if (keepActiveService.IsActive)
+                    {
+                        keepActiveService.Stop("Detenido por voz");
+                    }
+                    break;
+                case VoiceCommandKind.DesktopLeft:
+                    if (DesktopNavigation.TrySwitch(DesktopDirection.Left, out error))
+                    {
+                        await Task.Delay(450);
+                        if (exiting)
+                        {
+                            return;
+                        }
+
+                        if (!EnsureTransientWindowOnCurrentDesktop(
+                            voiceOverlayForm,
+                            "Completar el cambio de escritorio"))
+                        {
+                            return;
+                        }
+                    }
+                    break;
+                case VoiceCommandKind.DesktopRight:
+                    if (DesktopNavigation.TrySwitch(DesktopDirection.Right, out error))
+                    {
+                        await Task.Delay(450);
+                        if (exiting)
+                        {
+                            return;
+                        }
+
+                        if (!EnsureTransientWindowOnCurrentDesktop(
+                            voiceOverlayForm,
+                            "Completar el cambio de escritorio"))
+                        {
+                            return;
+                        }
+                    }
+                    break;
+                case VoiceCommandKind.DesktopAdjacent:
+                    bool canNavigateLeft;
+                    bool canNavigateRight;
+                    if (!virtualDesktopService.TryGetNavigationAvailability(
+                        out canNavigateLeft,
+                        out canNavigateRight))
+                    {
+                        error = "Windows no pudo consultar los escritorios virtuales.";
+                    }
+                    else if (canNavigateRight && !canNavigateLeft)
+                    {
+                        if (DesktopNavigation.TrySwitch(DesktopDirection.Right, out error))
+                        {
+                            await Task.Delay(450);
+                            if (exiting)
+                            {
+                                return;
+                            }
+
+                            if (!EnsureTransientWindowOnCurrentDesktop(
+                                voiceOverlayForm,
+                                "Completar el cambio de escritorio"))
+                            {
+                                return;
+                            }
+                        }
+                    }
+                    else if (canNavigateLeft && !canNavigateRight)
+                    {
+                        if (DesktopNavigation.TrySwitch(DesktopDirection.Left, out error))
+                        {
+                            await Task.Delay(450);
+                            if (exiting)
+                            {
+                                return;
+                            }
+
+                            if (!EnsureTransientWindowOnCurrentDesktop(
+                                voiceOverlayForm,
+                                "Completar el cambio de escritorio"))
+                            {
+                                return;
+                            }
+                        }
+                    }
+                    else if (canNavigateLeft && canNavigateRight)
+                    {
+                        error = "Di “escritorio izquierdo” o “escritorio derecho”.";
+                    }
+                    else
+                    {
+                        error = "No hay otro escritorio virtual disponible.";
+                    }
+                    break;
+                case VoiceCommandKind.DesktopCreate:
+                    if (DesktopNavigation.TryCreate(out error))
+                    {
+                        await Task.Delay(450);
+                        if (exiting)
+                        {
+                            return;
+                        }
+
+                        if (!EnsureTransientWindowOnCurrentDesktop(
+                            voiceOverlayForm,
+                            "Completar la creación del escritorio"))
+                        {
+                            return;
+                        }
+
+                        if (!settings.DesktopGuideShown)
+                        {
+                            settings.DesktopGuideShown = true;
+                            SaveSettings();
+                            voiceOverlayForm.HideOverlay();
+                            ShowDesktopGuide(true);
+                            return;
+                        }
+                    }
+                    break;
+                case VoiceCommandKind.DesktopOverview:
+                    voiceOverlayForm.HideOverlay();
+                    OpenDesktopOverview();
+                    return;
+                case VoiceCommandKind.ScreenCapture:
+                    voiceOverlayForm.HideOverlay();
+                    ScreenCaptureRequested(this, EventArgs.Empty);
+                    return;
+                case VoiceCommandKind.MediaPlayPause:
+                    error = mediaControlService.TryExecute(MediaCommand.TogglePlayPause);
+                    break;
+                case VoiceCommandKind.MediaPrevious:
+                    error = mediaControlService.TryExecute(MediaCommand.PreviousTrack);
+                    break;
+                case VoiceCommandKind.MediaNext:
+                    error = mediaControlService.TryExecute(MediaCommand.NextTrack);
+                    break;
+                case VoiceCommandKind.VolumeMute:
+                    error = mediaControlService.TryExecute(MediaCommand.ToggleMute);
+                    break;
+                case VoiceCommandKind.VolumeDown:
+                    error = mediaControlService.TryExecute(MediaCommand.VolumeDown);
+                    break;
+                case VoiceCommandKind.VolumeUp:
+                    error = mediaControlService.TryExecute(MediaCommand.VolumeUp);
+                    break;
+                case VoiceCommandKind.DictationUnavailable:
+                    voiceOverlayForm.ShowState(
+                        VoiceOverlayState.Unavailable,
+                        command.Title,
+                        command.Detail);
+                    voiceOverlayForm.DismissAfter(6000);
+                    return;
+                case VoiceCommandKind.Calculation:
+                case VoiceCommandKind.Conversion:
+                    break;
+                default:
+                    error = "La orden no pertenece al catálogo seguro de Raudo.";
+                    break;
+            }
+
+            if (!string.IsNullOrWhiteSpace(error))
+            {
+                voiceOverlayForm.ShowState(
+                    VoiceOverlayState.NotUnderstood,
+                    "No se pudo completar",
+                    error);
+                voiceOverlayForm.DismissAfter(4500);
+                return;
+            }
+
+            voiceOverlayForm.ShowState(
+                VoiceOverlayState.Success,
+                command.Title,
+                command.Detail);
+            voiceOverlayForm.DismissAfter(
+                command.Kind == VoiceCommandKind.Calculation
+                    || command.Kind == VoiceCommandKind.Conversion
+                    ? 4500
+                    : 2500);
+        }
+
+        private void EnsureVoiceOverlayForm()
+        {
+            if (voiceOverlayForm == null || voiceOverlayForm.IsDisposed)
+            {
+                voiceOverlayForm = new VoiceOverlayForm();
+                voiceOverlayForm.CancelRequested += VoiceOverlayCancelRequested;
+                voiceOverlayForm.ApplyTheme(ThemeService.Current());
+            }
+        }
+
+        private async void CreateDesktop()
+        {
+            if (exiting)
+            {
+                return;
+            }
+
+            string error;
+            if (!DesktopNavigation.TryCreate(out error))
+            {
+                ShowDesktopWarning(error ?? "Windows no pudo crear un escritorio nuevo.");
+                return;
+            }
+
+            await Task.Delay(450);
+            if (exiting)
+            {
+                return;
+            }
+
+            if (!settings.DesktopGuideShown)
+            {
+                settings.DesktopGuideShown = true;
+                SaveSettings();
+                ShowDesktopGuide(true);
+            }
+            else
+            {
+                notifyIcon.ShowBalloonTip(
+                    3500,
+                    "Nuevo escritorio listo",
+                    "Tu trabajo anterior sigue abierto. Usa Mini o Ctrl + Win + flecha para volver.",
+                    ToolTipIcon.Info);
+            }
+        }
+
+        private void OpenDesktopOverview()
+        {
+            string error;
+            if (!DesktopNavigation.TryOpenOverview(out error))
+            {
+                ShowDesktopWarning(error ?? "Windows no pudo abrir la vista de escritorios.");
+            }
+        }
+
+        private void DesktopCreateRequested(object sender, EventArgs eventArgs)
+        {
+            CreateDesktop();
+        }
+
+        private void DesktopOverviewRequested(object sender, EventArgs eventArgs)
+        {
+            OpenDesktopOverview();
+        }
+
+        private void DesktopGuideRequested(object sender, EventArgs eventArgs)
+        {
+            ShowDesktopGuide(false);
+        }
+
+        private void ShowDesktopWarning(string message)
+        {
+            notifyIcon.ShowBalloonTip(
+                4500,
+                "Escritorios de trabajo",
+                message,
+                ToolTipIcon.Warning);
+        }
+
+        private void VoiceOverlayCancelRequested(object sender, EventArgs eventArgs)
+        {
+            if (voiceSessionActive || voiceRecognitionService.IsListening)
+            {
+                ToggleVoiceSession();
+            }
         }
 
         private void SaltoHotKeyPressed(object sender, EventArgs eventArgs)
@@ -1035,8 +1822,17 @@ namespace Raudo
             keepActiveService.AttentionRequired -= KeepActiveServiceAttentionRequired;
             form.MinimizeRequested -= MainFormMinimizeRequested;
             form.UpdateRestartRequested -= MainFormUpdateRestartRequested;
+            form.DesktopCreateRequested -= DesktopCreateRequested;
+            form.DesktopGuideRequested -= DesktopGuideRequested;
             saltoHotKey.Pressed -= SaltoHotKeyPressed;
             saltoHotKey.Dispose();
+            voiceHotKey.Pressed -= VoiceHotKeyPressed;
+            voiceHotKey.Dispose();
+            voiceSessionVersion++;
+            voiceSessionActive = false;
+            voiceRecognitionService.PhaseChanged -= VoiceRecognitionPhaseChanged;
+            voiceRecognitionService.Cancel();
+            voiceRecognitionService.Dispose();
             reminderRetryTimer.Stop();
             if (minimizeTransition != null)
             {
@@ -1053,6 +1849,22 @@ namespace Raudo
                 saltoForm.AllowCloseAndClose();
                 saltoForm.Dispose();
                 saltoForm = null;
+            }
+
+            if (voiceOverlayForm != null)
+            {
+                voiceOverlayForm.CancelRequested -= VoiceOverlayCancelRequested;
+                voiceOverlayForm.AllowCloseAndClose();
+                voiceOverlayForm.Dispose();
+                voiceOverlayForm = null;
+            }
+
+            if (desktopGuideForm != null)
+            {
+                desktopGuideForm.CreateRequested -= DesktopCreateRequested;
+                desktopGuideForm.AllowCloseAndClose();
+                desktopGuideForm.Dispose();
+                desktopGuideForm = null;
             }
 
             DestroyMiniForm();

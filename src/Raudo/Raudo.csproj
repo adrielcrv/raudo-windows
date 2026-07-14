@@ -63,8 +63,10 @@
   <ItemGroup>
     <Compile Include="ActionCatalog.cs" />
     <Compile Include="ApplicationCatalog.cs" />
+    <Compile Include="ApplicationAliases.cs" />
     <Compile Include="Controls.cs" />
     <Compile Include="DashboardControls.cs" />
+    <Compile Include="DesktopGuideForm.cs" />
     <Compile Include="GlobalHotKey.cs" />
     <Compile Include="KeepActiveService.cs" />
     <Compile Include="MainForm.cs" />
@@ -82,10 +84,16 @@
     <Compile Include="UpdateService.cs" />
     <Compile Include="UpdateInstaller.cs" />
     <Compile Include="VirtualDesktopService.cs" />
+    <Compile Include="VoiceCommand.cs" />
+    <Compile Include="VoiceOverlayForm.cs" />
+    <Compile Include="VoiceRecognitionService.cs" />
     <Compile Include="WindowTransition.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="app.manifest" />
+    <EmbeddedResource Include="Resources\ApplicationAliases.es-MX.json">
+      <LogicalName>Raudo.ApplicationAliases.es-MX.json</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

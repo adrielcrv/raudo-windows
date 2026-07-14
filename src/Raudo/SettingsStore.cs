@@ -21,11 +21,13 @@ namespace Raudo
         public int DurationMinutes { get; set; }
         public bool MiniModeEnabled { get; set; }
         public bool MiniHintShown { get; set; }
+        public bool DesktopGuideShown { get; set; }
         public int MiniCenterX { get; set; }
         public int MiniCenterY { get; set; }
         public int SaltoCenterX { get; set; }
         public int SaltoTopY { get; set; }
         public int SaltoOpacityPercent { get; set; }
+        public long PulseActiveUntilUtcTicks { get; set; }
 
         public void Normalize()
         {
@@ -52,6 +54,48 @@ namespace Raudo
             {
                 SaltoOpacityPercent = 100;
             }
+
+            if (PulseActiveUntilUtcTicks < 0
+                || PulseActiveUntilUtcTicks > DateTime.MaxValue.Ticks)
+            {
+                PulseActiveUntilUtcTicks = 0;
+            }
+        }
+    }
+
+    internal static class PulseSessionState
+    {
+        internal const int MaximumSessionMinutes = 120;
+        internal const int ClockToleranceMinutes = 5;
+
+        public static bool TryGetRestorableExpiration(
+            long expirationUtcTicks,
+            DateTime utcNow,
+            out DateTime expirationUtc)
+        {
+            expirationUtc = DateTime.MinValue;
+            if (expirationUtcTicks <= 0
+                || expirationUtcTicks > DateTime.MaxValue.Ticks)
+            {
+                return false;
+            }
+
+            if (utcNow.Kind != DateTimeKind.Utc)
+            {
+                utcNow = utcNow.ToUniversalTime();
+            }
+
+            DateTime candidate = new DateTime(expirationUtcTicks, DateTimeKind.Utc);
+            TimeSpan remaining = candidate - utcNow;
+            if (remaining <= TimeSpan.Zero
+                || remaining > TimeSpan.FromMinutes(
+                    MaximumSessionMinutes + ClockToleranceMinutes))
+            {
+                return false;
+            }
+
+            expirationUtc = candidate;
+            return true;
         }
     }
 

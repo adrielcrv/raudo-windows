@@ -17,6 +17,7 @@ $iconPath = Join-Path $assetsPath 'Raudo.ico'
 $outputPath = Join-Path $artifactsPath 'Raudo.exe'
 $testOutputPath = Join-Path $artifactsPath 'Raudo.Tests.exe'
 $manifestPath = Join-Path $sourceDirectory 'app.manifest'
+$applicationAliasesPath = Join-Path $sourceDirectory 'Resources\ApplicationAliases.es-MX.json'
 $assetGeneratorSource = Join-Path $PSScriptRoot 'GenerateAssets.cs'
 $assetGeneratorExe = Join-Path ([IO.Path]::GetTempPath()) "Raudo-GenerateAssets-$PID.exe"
 
@@ -119,6 +120,7 @@ else {
         "/reference:$windowsContractsPath\Windows.Foundation.UniversalApiContract.winmd",
         "/win32icon:$iconPath",
         "/win32manifest:$manifestPath",
+        "/resource:$applicationAliasesPath,Raudo.ApplicationAliases.es-MX.json",
         "/out:$outputPath"
     ) + $sourcePaths
 

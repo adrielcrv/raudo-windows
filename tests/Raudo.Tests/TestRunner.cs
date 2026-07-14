@@ -20,9 +20,117 @@ internal static class TestRunner
     {
         try
         {
+            if (args.Length == 1
+                && args[0].StartsWith("--capture-voice-listening-dark=", StringComparison.Ordinal))
+            {
+                CaptureVoiceOverlay(
+                    args[0].Substring("--capture-voice-listening-dark=".Length),
+                    ThemePalette.Create(true),
+                    VoiceOverlayState.Listening,
+                    "Escuchando...",
+                    "Prueba “abre Excel” o “cuánto es 12 por 8”.",
+                    96);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
+                && args[0].StartsWith("--capture-voice-success-light=", StringComparison.Ordinal))
+            {
+                CaptureVoiceOverlay(
+                    args[0].Substring("--capture-voice-success-light=".Length),
+                    ThemePalette.Create(false),
+                    VoiceOverlayState.Success,
+                    "57,024",
+                    "132 × 432",
+                    96);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
+                && args[0].StartsWith("--capture-voice-retry-dark=", StringComparison.Ordinal))
+            {
+                CaptureVoiceOverlay(
+                    args[0].Substring("--capture-voice-retry-dark=".Length),
+                    ThemePalette.Create(true),
+                    VoiceOverlayState.NotUnderstood,
+                    "No entendí · intento 2 de 2",
+                    "Escuché “abre notas”. Vuelvo a escuchar una vez más.",
+                    96);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
+                && args[0].StartsWith("--capture-voice-high-contrast=", StringComparison.Ordinal))
+            {
+                CaptureVoiceOverlay(
+                    args[0].Substring("--capture-voice-high-contrast=".Length),
+                    ThemePalette.CreateHighContrast(),
+                    VoiceOverlayState.Unavailable,
+                    "Voz no disponible",
+                    "Permite el acceso al micrófono en Windows.",
+                    96);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
+                && args[0].StartsWith("--capture-voice-listening-dark-150=", StringComparison.Ordinal))
+            {
+                CaptureVoiceOverlay(
+                    args[0].Substring("--capture-voice-listening-dark-150=".Length),
+                    ThemePalette.Create(true),
+                    VoiceOverlayState.Listening,
+                    "Escuchando...",
+                    "Prueba “abre Excel” o “cuánto es 12 por 8”.",
+                    144);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
+                && string.Equals(args[0], "--voice-grammar-probe", StringComparison.Ordinal))
+            {
+                RunVoiceGrammarProbe();
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
+                && string.Equals(args[0], "--resource-probe-voice-idle", StringComparison.Ordinal))
+            {
+                RunVoiceIdleResourceProbe();
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
             if (args.Length == 1 && args[0].StartsWith("--capture-ui=", StringComparison.Ordinal))
             {
                 CaptureUi(args[0].Substring("--capture-ui=".Length), null);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
+                && args[0].StartsWith("--capture-desktop-guide-light=", StringComparison.Ordinal))
+            {
+                CaptureDesktopGuide(
+                    args[0].Substring("--capture-desktop-guide-light=".Length),
+                    false,
+                    false);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
+                && args[0].StartsWith("--capture-desktop-guide-created-dark=", StringComparison.Ordinal))
+            {
+                CaptureDesktopGuide(
+                    args[0].Substring("--capture-desktop-guide-created-dark=".Length),
+                    true,
+                    true);
                 Console.WriteLine("PASS");
                 return 0;
             }
@@ -859,11 +967,14 @@ internal static class TestRunner
             foreach (InstalledApplication rawApplication in applicationSnapshot)
             {
                 InstalledApplication application = rawApplication;
+                string aliases = application.Aliases == null
+                    ? string.Empty
+                    : string.Join(" ", application.Aliases);
                 actions.Add(new RaudoAction(
                     "open-application:" + application.Identifier,
                     application.Name,
                     "Aplicación instalada",
-                    "aplicacion programa iniciar abrir " + application.Name,
+                    "aplicacion programa iniciar abrir " + application.Name + " " + aliases,
                     "Abrir",
                     RaudoActionGlyph.Application,
                     RaudoActionKind.Application,
@@ -1347,8 +1458,337 @@ internal static class TestRunner
         }
     }
 
+    private static void CaptureVoiceOverlay(
+        string path,
+        ThemePalette palette,
+        VoiceOverlayState state,
+        string title,
+        string detail,
+        int targetDpi)
+    {
+        Application.EnableVisualStyles();
+        Application.SetCompatibleTextRenderingDefault(false);
+        using (VoiceOverlayForm form = new VoiceOverlayForm(delegate { return false; }))
+        {
+            form.ApplyTheme(palette);
+            if (targetDpi > 96)
+            {
+                ScaleToTargetDpi(form, targetDpi);
+            }
+
+            form.ShowState(state, title, detail);
+            Application.DoEvents();
+            Assert(!form.MotionActiveForTesting, "Movimiento reducido inició una animación de voz.");
+            Assert(form.StateForTesting == state, "La isla de voz no conservó su estado visual.");
+            AssertAccessibleControls(form);
+            using (Bitmap bitmap = new Bitmap(form.ClientSize.Width, form.ClientSize.Height))
+            {
+                form.DrawToBitmap(
+                    bitmap,
+                    new Rectangle(Point.Empty, form.ClientSize));
+                bitmap.Save(path, ImageFormat.Png);
+            }
+
+            form.AllowCloseAndClose();
+        }
+    }
+
+    private static void CaptureDesktopGuide(string path, bool dark, bool created)
+    {
+        Application.EnableVisualStyles();
+        Application.SetCompatibleTextRenderingDefault(false);
+        using (Icon icon = IconFactory.Create(false))
+        using (DesktopGuideForm form = new DesktopGuideForm(icon))
+        {
+            form.ApplyTheme(ThemePalette.Create(dark));
+            if (created)
+            {
+                form.ShowCreated();
+            }
+            else
+            {
+                form.ShowIntroduction();
+            }
+
+            Application.DoEvents();
+            Thread.Sleep(100);
+            Application.DoEvents();
+            using (Bitmap full = new Bitmap(form.Width, form.Height))
+            {
+                form.DrawToBitmap(full, new Rectangle(0, 0, form.Width, form.Height));
+                int border = Math.Max(0, (form.Width - form.ClientSize.Width) / 2);
+                int top = Math.Max(0, form.Height - form.ClientSize.Height - border);
+                Rectangle clientBounds = new Rectangle(
+                    border,
+                    top,
+                    form.ClientSize.Width,
+                    form.ClientSize.Height);
+                using (Bitmap client = full.Clone(clientBounds, PixelFormat.Format32bppArgb))
+                {
+                    client.Save(path, ImageFormat.Png);
+                }
+            }
+
+            form.AllowCloseAndClose();
+        }
+    }
+
+    private static void RunVoiceGrammarProbe()
+    {
+        VoiceAvailability availability = VoiceRecognitionService.GetAvailability();
+        Assert(availability.IsAvailable, availability.Message);
+        InstalledApplicationCatalog catalog = new InstalledApplicationCatalog();
+        catalog.LoadNowForTesting();
+        IList<InstalledApplication> applications = catalog.GetSnapshot();
+        Assert(
+            applications.Count > 0,
+            catalog.LoadError ?? "Windows no devolvió aplicaciones instaladas.");
+        Stopwatch watch = Stopwatch.StartNew();
+        Windows.Media.SpeechRecognition.SpeechRecognitionResultStatus status =
+            VoiceRecognitionService
+                .CompileForTestingAsync(applications)
+                .GetAwaiter()
+                .GetResult();
+        watch.Stop();
+        Console.WriteLine(
+            "Voice grammar: {0} · {1} · {2} apps · {3:F0} ms",
+            availability.LanguageTag,
+            status,
+            Math.Min(applications.Count, VoiceGrammarBuilder.MaximumApplications),
+            watch.Elapsed.TotalMilliseconds);
+        Assert(
+            status == Windows.Media.SpeechRecognition.SpeechRecognitionResultStatus.Success,
+            "Windows no compiló la gramática local de Raudo: " + status);
+    }
+
+    private static void RunVoiceIdleResourceProbe()
+    {
+        using (VoiceRecognitionService service = new VoiceRecognitionService())
+        using (Process process = Process.GetCurrentProcess())
+        {
+            Assert(!service.IsListening, "El servicio de voz abrió una sesión al construirse.");
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+            process.Refresh();
+            long privateBefore = process.PrivateMemorySize64;
+            TimeSpan cpuBefore = process.TotalProcessorTime;
+            Stopwatch elapsed = Stopwatch.StartNew();
+            while (elapsed.Elapsed < TimeSpan.FromSeconds(5))
+            {
+                Thread.Sleep(50);
+            }
+
+            elapsed.Stop();
+            process.Refresh();
+            double normalizedCpuPercent = (process.TotalProcessorTime - cpuBefore).TotalMilliseconds
+                / elapsed.Elapsed.TotalMilliseconds
+                / Math.Max(1, Environment.ProcessorCount)
+                * 100D;
+            double privateDeltaMb = (process.PrivateMemorySize64 - privateBefore)
+                / 1024D
+                / 1024D;
+            Console.WriteLine(
+                "Voice idle CPU: {0:F3}% · Private delta: {1:F1} MB · Private: {2:F1} MB",
+                normalizedCpuPercent,
+                privateDeltaMb,
+                process.PrivateMemorySize64 / 1024D / 1024D);
+            Assert(normalizedCpuPercent < 1D, "Voz excedió 1% de CPU sin una sesión activa.");
+            Assert(privateDeltaMb < 2D, "Voz retuvo memoria sin una sesión activa.");
+            Assert(!service.IsListening, "El servicio de voz inició escucha durante el reposo.");
+        }
+    }
+
+    private static void TestVoiceCommands()
+    {
+        for (int value = 0; value <= 999; value++)
+        {
+            int parsed;
+            Assert(
+                VoiceNumberWords.TryParse(VoiceNumberWords.ToSpanish(value), out parsed)
+                    && parsed == value,
+                "El número hablado no conservó su valor: " + value);
+        }
+
+        IList<InstalledApplication> applications = new List<InstalledApplication>
+        {
+            new InstalledApplication("Google Chrome", "test.chrome"),
+            new InstalledApplication("Microsoft Excel", "test.excel"),
+            new InstalledApplication(
+                "Notepad",
+                "Microsoft.WindowsNotepad_8wekyb3d8bbwe!App")
+        };
+        VoiceCommand calculation = VoiceCommandParser.Parse(
+            "Raudo cuánto es ciento treinta y dos por cuatrocientos treinta y dos",
+            applications);
+        Assert(
+            calculation.Kind == VoiceCommandKind.Calculation
+                && calculation.Title == "57024"
+                && calculation.Detail == "132 * 432",
+            "La operación hablada no produjo 57024.");
+
+        VoiceCommand app = VoiceCommandParser.Parse(
+            "raudo abre microsoft excel",
+            applications);
+        Assert(
+            app.Kind == VoiceCommandKind.OpenApplication
+                && app.ApplicationIdentifier == "test.excel",
+            "La orden de aplicación no conservó el identificador seguro del catálogo.");
+        InstalledApplication notepad = applications[2];
+        Assert(
+            notepad.Aliases.Contains("Bloc de notas"),
+            "El catálogo embebido no vinculó Bloc de notas con la identidad de Notepad.");
+        VoiceCommand localizedApp = VoiceCommandParser.Parse(
+            "raudo abre bloc de notas",
+            applications);
+        Assert(
+            localizedApp.Kind == VoiceCommandKind.OpenApplication
+                && localizedApp.ApplicationIdentifier
+                    == "Microsoft.WindowsNotepad_8wekyb3d8bbwe!App",
+            "El alias localizado no conservó la identidad instalada de Notepad.");
+        Assert(
+            VoiceCommandParser.Parse("abre youtube", applications).Kind
+                == VoiceCommandKind.OpenYouTube,
+            "YouTube no se clasificó como destino fijo.");
+        Assert(
+            VoiceCommandParser.Parse("enciende pulso", applications).Kind
+                == VoiceCommandKind.StartPulse,
+            "Pulso no se clasificó como acción local.");
+        Assert(
+            VoiceCommandParser.Parse("escritorio siguiente", applications).Kind
+                == VoiceCommandKind.DesktopRight,
+            "El escritorio siguiente no se clasificó correctamente.");
+        Assert(
+            VoiceCommandParser.Parse("cambia de escritorio", applications).Kind
+                == VoiceCommandKind.DesktopAdjacent,
+            "El cambio al escritorio adyacente no se clasificó correctamente.");
+        Assert(
+            VoiceCommandParser.Parse("crea un nuevo escritorio", applications).Kind
+                == VoiceCommandKind.DesktopCreate,
+            "La creación de escritorio no se clasificó correctamente.");
+        Assert(
+            VoiceCommandParser.Parse("muéstrame los escritorios", applications).Kind
+                == VoiceCommandKind.DesktopOverview,
+            "La vista de escritorios no se clasificó correctamente.");
+        VoiceCommand conversion = VoiceCommandParser.Parse(
+            "convierte diez kilómetros a millas",
+            applications);
+        Assert(
+            conversion.Kind == VoiceCommandKind.Conversion
+                && conversion.Title.EndsWith(" mi", StringComparison.Ordinal),
+            "La conversión hablada no reutilizó el motor local de Salto.");
+        Assert(
+            VoiceCommandParser.Parse("borra documentos", applications).Kind
+                == VoiceCommandKind.Unknown,
+            "Una orden destructiva salió del estado Unknown.");
+
+        IList<InstalledApplication> ambiguousApplications =
+            new List<InstalledApplication>
+            {
+                new InstalledApplication("Microsoft Teams", "test.teams"),
+                new InstalledApplication("Microsoft Excel", "test.excel")
+            };
+        Assert(
+            VoiceCommandParser.Parse("abre microsoft", ambiguousApplications).Kind
+                == VoiceCommandKind.Unknown,
+            "Una aplicación ambigua se eligió sin confirmación.");
+
+        IList<InstalledApplication> ambiguousAliases = new List<InstalledApplication>
+        {
+            new InstalledApplication(
+                "Editor uno",
+                "test.editor.one",
+                new List<string> { "editor" }),
+            new InstalledApplication(
+                "Editor dos",
+                "test.editor.two",
+                new List<string> { "editor" })
+        };
+        Assert(
+            VoiceCommandParser.Parse("abre editor", ambiguousAliases).Kind
+                == VoiceCommandKind.Unknown,
+            "Un alias compartido eligió una aplicación sin confirmación.");
+
+        string grammar = VoiceGrammarBuilder.BuildSrgs("es-MX");
+        string spanishSpainGrammar = VoiceGrammarBuilder.BuildSrgs("es-ES");
+        Assert(
+            grammar.IndexOf("xml:lang=\"es-MX\"", StringComparison.Ordinal) >= 0
+                && spanishSpainGrammar.IndexOf(
+                    "xml:lang=\"es-ES\"",
+                    StringComparison.Ordinal) >= 0
+                && spanishSpainGrammar.IndexOf(
+                    "xml:lang=\"es-MX\"",
+                    StringComparison.Ordinal) < 0,
+            "La gramática no conserva el idioma del reconocedor seleccionado.");
+        Assert(
+            grammar.IndexOf("SpeechRecognitionTopicConstraint", StringComparison.OrdinalIgnoreCase) < 0
+                && grammar.IndexOf("webSearch", StringComparison.OrdinalIgnoreCase) < 0
+                && grammar.IndexOf("dictation", StringComparison.OrdinalIgnoreCase) < 0,
+            "La gramática local contiene una referencia a reconocimiento remoto.");
+        Assert(
+            grammar.IndexOf("cuatrocientos treinta y dos", StringComparison.Ordinal) >= 0,
+            "La gramática no incluye operandos hablados hasta 999.");
+
+        IList<string> safePhrases = VoiceGrammarBuilder.BuildApplicationPhrases(
+            new List<InstalledApplication>
+            {
+                new InstalledApplication("Bad <App> & Tool", "test.bad")
+            });
+        Assert(
+            safePhrases.Count == 2
+                && safePhrases[0] == "abre bad app tool"
+                && safePhrases[1] == "raudo abre bad app tool",
+            "Los nombres de aplicación no se normalizaron para la gramática.");
+
+        IList<string> localizedPhrases = VoiceGrammarBuilder.BuildApplicationPhrases(
+            applications);
+        Assert(
+            localizedPhrases.Contains("abre bloc de notas")
+                && localizedPhrases.Contains("raudo abre bloc de notas"),
+            "La gramática de voz no incluyó el alias localizado de Notepad.");
+
+        Assert(
+            VoiceSessionPolicy.ShouldRetry(
+                new VoiceRecognitionOutcome(
+                    VoiceRecognitionOutcomeKind.NotUnderstood,
+                    string.Empty,
+                    "Audio poco claro"),
+                applications),
+            "Una orden no entendida no habilitó la reescucha.");
+        Assert(
+            !VoiceSessionPolicy.ShouldRetry(
+                new VoiceRecognitionOutcome(
+                    VoiceRecognitionOutcomeKind.Success,
+                    "abre bloc de notas",
+                    string.Empty),
+                applications),
+            "Una orden resuelta por alias pidió una reescucha innecesaria.");
+        Assert(
+            VoiceSessionPolicy.ShouldRetry(
+                new VoiceRecognitionOutcome(
+                    VoiceRecognitionOutcomeKind.Success,
+                    "orden desconocida",
+                    string.Empty),
+                applications),
+            "Una orden reconocida pero no resuelta no habilitó la reescucha.");
+        Assert(
+            !VoiceSessionPolicy.ShouldRetry(
+                new VoiceRecognitionOutcome(
+                    VoiceRecognitionOutcomeKind.Error,
+                    string.Empty,
+                    "Error"),
+                applications),
+            "Un error de voz intentó reiniciar la escucha.");
+
+        using (VoiceRecognitionService service = new VoiceRecognitionService())
+        {
+            Assert(!service.IsListening, "El servicio de voz escucha durante el reposo.");
+        }
+    }
+
     private static void RunUnitTests()
     {
+        TestVoiceCommands();
         Assert(DurationOption.IsSupported(15), "15 minutos debe ser válido.");
         Assert(DurationOption.IsSupported(120), "120 minutos debe ser válido.");
         Assert(!DurationOption.IsSupported(0), "La duración ilimitada no debe estar disponible.");
@@ -1368,6 +1808,14 @@ internal static class TestRunner
             settings.SaltoCenterX = 760;
             settings.SaltoTopY = 180;
             settings.SaltoOpacityPercent = 82;
+            settings.PulseActiveUntilUtcTicks = new DateTime(
+                2026,
+                7,
+                14,
+                18,
+                30,
+                0,
+                DateTimeKind.Utc).Ticks;
             store.Save(settings);
             RaudoSettings loaded = store.Load();
             Assert(loaded.DurationMinutes == 60, "La configuración no sobrevivió al guardado.");
@@ -1382,11 +1830,15 @@ internal static class TestRunner
             Assert(
                 loaded.SaltoOpacityPercent == 82,
                 "La opacidad de Salto no sobrevivió al guardado.");
+            Assert(
+                loaded.PulseActiveUntilUtcTicks == settings.PulseActiveUntilUtcTicks,
+                "La expiración de Pulso no sobrevivió al guardado.");
 
             settings.DurationMinutes = 0;
             settings.SaltoCenterX = -4;
             settings.SaltoTopY = 180;
             settings.SaltoOpacityPercent = 73;
+            settings.PulseActiveUntilUtcTicks = -1;
             store.Save(settings);
             Assert(store.Load().DurationMinutes == 30, "La normalización de duración no funcionó.");
             Assert(
@@ -1394,6 +1846,9 @@ internal static class TestRunner
                     && store.Load().SaltoTopY == -1
                     && store.Load().SaltoOpacityPercent == 100,
                 "La normalización de presentación de Salto no funcionó.");
+            Assert(
+                store.Load().PulseActiveUntilUtcTicks == 0,
+                "La normalización de la expiración de Pulso no funcionó.");
         }
         finally
         {
@@ -1903,6 +2358,17 @@ internal static class TestRunner
             mainForm.AllowCloseAndClose();
         }
 
+        using (Icon guideIcon = IconFactory.Create(false))
+        using (DesktopGuideForm guide = new DesktopGuideForm(guideIcon))
+        {
+            guide.ApplyTheme(highContrast);
+            guide.ShowIntroduction();
+            AssertAccessibleControls(guide);
+            ScaleToTargetDpi(guide, 144);
+            AssertControlsWithinParent(guide);
+            guide.AllowCloseAndClose();
+        }
+
         MediaControlService miniMediaControl = new MediaControlService(
             delegate(NativeMethods.Input[] inputs) { return (uint)inputs.Length; });
         using (FakeMediaSessionService miniMediaSessions = new FakeMediaSessionService())
@@ -2012,6 +2478,57 @@ internal static class TestRunner
             KeepActiveService.DeterminePhase(TimeSpan.Zero)
                 == KeepActivePhase.Completed,
             "Una sesión agotada debe marcarse como completada.");
+
+        DateTime pulseReferenceUtc = new DateTime(
+            2026,
+            7,
+            14,
+            18,
+            0,
+            0,
+            DateTimeKind.Utc);
+        DateTime restorablePulseExpiration;
+        DateTime expectedPulseExpiration = pulseReferenceUtc.AddMinutes(30);
+        Assert(
+            PulseSessionState.TryGetRestorableExpiration(
+                expectedPulseExpiration.Ticks,
+                pulseReferenceUtc,
+                out restorablePulseExpiration)
+                && restorablePulseExpiration == expectedPulseExpiration,
+            "Una sesión vigente de Pulso no se puede restaurar.");
+        Assert(
+            !PulseSessionState.TryGetRestorableExpiration(
+                pulseReferenceUtc.Ticks,
+                pulseReferenceUtc,
+                out restorablePulseExpiration),
+            "Una sesión vencida de Pulso se consideró restaurable.");
+        Assert(
+            !PulseSessionState.TryGetRestorableExpiration(
+                pulseReferenceUtc.AddMinutes(126).Ticks,
+                pulseReferenceUtc,
+                out restorablePulseExpiration),
+            "Una expiración implausible de Pulso se consideró restaurable.");
+        Assert(
+            !PulseSessionState.TryGetRestorableExpiration(
+                -1,
+                pulseReferenceUtc,
+                out restorablePulseExpiration),
+            "Una expiración inválida de Pulso se consideró restaurable.");
+
+        using (KeepActiveService restoredPulse = new KeepActiveService())
+        {
+            DateTime liveExpiration = DateTime.UtcNow.AddMinutes(15);
+            Assert(
+                restoredPulse.TryResume(liveExpiration)
+                    && restoredPulse.IsActive
+                    && restoredPulse.ActiveUntilUtc.HasValue
+                    && restoredPulse.ActiveUntilUtc.Value == liveExpiration,
+                "Pulso no reanudó una sesión vigente.");
+            restoredPulse.Stop("Prueba completada");
+            Assert(
+                !restoredPulse.IsActive && !restoredPulse.ActiveUntilUtc.HasValue,
+                "Pulso conservó una expiración después de detenerse.");
+        }
 
         Assert(
             ShellUserState.IsImmersive(UserNotificationState.RunningDirect3DFullScreen)
@@ -2298,6 +2815,20 @@ internal static class TestRunner
                         ? canNavigateLeft
                         : canNavigateRight,
                     "No se detectó la dirección para regresar al escritorio original.");
+
+                string moveRaudoError;
+                Assert(
+                    service.TryMoveWindowToCurrentDesktop(
+                        sourceAnchor.Handle,
+                        out moveRaudoError),
+                    moveRaudoError ?? "No se pudo trasladar una ventana de Raudo.");
+                Guid raudoDesktop;
+                Guid activeDesktop;
+                Assert(
+                    service.TryGetDesktopId(sourceAnchor.Handle, out raudoDesktop)
+                        && service.TryGetDesktopId(destinationAnchor.Handle, out activeDesktop)
+                        && raudoDesktop == activeDesktop,
+                    "La ventana de Raudo no terminó en el escritorio activo.");
 
                 System.Collections.Generic.IList<DesktopWindow> windows;
                 string listError;

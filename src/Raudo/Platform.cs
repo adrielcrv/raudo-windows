@@ -52,6 +52,10 @@ namespace Raudo
 
     internal static class BrowserLauncher
     {
+        private static readonly Uri YouTubeAddress = new Uri("https://www.youtube.com/");
+        private static readonly Uri WeatherAddress = new Uri(
+            "https://www.google.com/search?q=clima+cerca+de+m%C3%AD");
+
         public static void OpenGitHubRelease(Uri uri)
         {
             if (uri == null
@@ -65,6 +69,50 @@ namespace Raudo
             info.FileName = uri.AbsoluteUri;
             info.UseShellExecute = true;
             Process.Start(info);
+        }
+
+        public static string TryOpenYouTube()
+        {
+            return TryOpenTrustedAddress(YouTubeAddress, "www.youtube.com");
+        }
+
+        public static string TryOpenWeather()
+        {
+            return TryOpenTrustedAddress(WeatherAddress, "www.google.com");
+        }
+
+        private static string TryOpenTrustedAddress(Uri uri, string expectedHost)
+        {
+            if (uri == null
+                || !string.Equals(
+                    uri.Scheme,
+                    Uri.UriSchemeHttps,
+                    StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(
+                    uri.Host,
+                    expectedHost,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return "La dirección solicitada no pertenece al catálogo seguro de Raudo.";
+            }
+
+            try
+            {
+                ProcessStartInfo info = new ProcessStartInfo();
+                info.FileName = uri.AbsoluteUri;
+                info.UseShellExecute = true;
+                Process process = Process.Start(info);
+                if (process != null)
+                {
+                    process.Dispose();
+                }
+
+                return null;
+            }
+            catch (Exception)
+            {
+                return "Windows no pudo abrir el navegador predeterminado.";
+            }
         }
     }
 

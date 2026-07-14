@@ -4,6 +4,17 @@ Este proyecto utiliza versionado semántico.
 
 ## [Sin publicar]
 
+## [1.8.4] - 2026-07-14
+
+- Órdenes de voz locales en español mediante `Ctrl + Alt + V`, activadas únicamente bajo demanda y limitadas a una gramática cerrada de acciones seguras.
+- Apertura de aplicaciones instaladas con alias localizados, controles de Pulso y multimedia, navegación y creación de escritorios, Recortes, cálculos y conversiones mediante voz.
+- Segundo intento automático cuando una orden no se entiende o no coincide con una acción disponible, sin mantener el micrófono activo en segundo plano.
+- Salto, la escucha de voz y sus confirmaciones siguen el escritorio activo en configuraciones con varios escritorios virtuales.
+- Creación de escritorios desde la ventana principal, la bandeja o voz, acompañada de una guía introductoria disponible bajo demanda.
+- Pulso conserva el vencimiento original y vuelve a establecer su solicitud a Windows después de una actualización o reinicio inesperado de Raudo.
+- Las salidas explícitas, el bloqueo, la suspensión y el cierre de sesión continúan apagando Pulso y eliminando su estado persistido.
+- Validación ampliada para gramática local, alias, reintentos, seguridad de comandos, seguimiento de escritorios, recuperación de Pulse y consumo de recursos.
+
 ## [1.7.0] - 2026-07-14
 
 - Salto adapta su tamaño a la intención actual: una fila para cálculos, conversiones y búsquedas específicas, hasta cinco filas para búsquedas amplias.

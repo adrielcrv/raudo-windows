@@ -21,8 +21,9 @@ Raudo reúne utilidades locales y ligeras para Windows en una aplicación de ban
 - Genera una entrada mínima únicamente después de 45 segundos sin actividad.
 - Restaura el cursor a su posición original.
 - Se limita a 15, 30, 60 o 120 minutos.
+- Conserva su vencimiento original al reiniciar Raudo o completar una actualización.
 - Se detiene al bloquear, suspender o cerrar la sesión interactiva de Windows.
-- No se activa automáticamente al iniciar la aplicación.
+- No inicia una sesión nueva automáticamente; sólo recupera una sesión vigente con su vencimiento original.
 
 ### Salto
 
@@ -47,6 +48,16 @@ Raudo reúne utilidades locales y ligeras para Windows en una aplicación de ban
   <img src="docs/raudo-salto-dark.png" width="640" alt="Salto de Raudo en modo oscuro">
 </p>
 
+### Voz
+
+- Escucha una orden al presionar `Ctrl + Alt + V` o seleccionar **Hablar con Raudo**; no mantiene un micrófono abierto ni una palabra de activación en segundo plano.
+- Utiliza el reconocimiento de gramática de Windows con un catálogo local y cerrado de órdenes en español.
+- Puede abrir aplicaciones instaladas, Salto, Raudo, YouTube o una búsqueda del clima; controlar Pulso, multimedia y volumen; recortar pantalla; crear o cambiar escritorios; calcular y convertir unidades.
+- Reconoce alias localizados de aplicaciones, por ejemplo **Bloc de notas**, aunque Windows exponga el nombre instalado en otro idioma.
+- Si una orden no se entiende o no coincide con una acción segura, vuelve a escuchar una vez en la misma sesión.
+- Requiere un idioma de voz en español instalado en Windows y permiso de micrófono para aplicaciones de escritorio.
+- El audio y el texto reconocido son transitorios: Raudo no los almacena, no conserva historial y no los envía a un servicio remoto.
+
 ### Multimedia
 
 - Ofrece reproducir o pausar, pista anterior, pista siguiente, silenciar, bajar volumen y subir volumen.
@@ -58,6 +69,13 @@ Raudo reúne utilidades locales y ligeras para Windows en una aplicación de ban
 ### Recortar pantalla
 
 Abre la Herramienta Recortes mediante el protocolo `ms-screenclip` incluido en Windows. Esta acción no captura ni lee el contenido del portapapeles.
+
+### Escritorios de trabajo
+
+- Permite crear un escritorio desde la ventana principal, la bandeja o una orden de voz.
+- Incluye una guía breve para personas que aún no utilizan los escritorios virtuales de Windows.
+- Mantiene Salto, la escucha de voz y sus confirmaciones en el escritorio activo.
+- Oculta las direcciones de navegación que no tienen un escritorio adyacente.
 
 ### Modo Mini
 
@@ -85,7 +103,7 @@ La detección de ventanas utiliza la interfaz pública `IVirtualDesktopManager`.
 
 ## Privacidad y red
 
-Raudo no incluye telemetría, cuentas ni publicidad. Las búsquedas de Salto permanecen en memoria y se utilizan únicamente para filtrar resultados o producir un cálculo o conversión local; sólo se guardan la posición y el nivel de opacidad elegidos. El catálogo de aplicaciones se consulta a Windows bajo demanda; Raudo no recorre el disco ni conserva las consultas. Un resultado sólo se escribe en el portapapeles después de seleccionarlo. Los controles multimedia automáticos envían comandos fijos; al abrir el selector de Mini, Raudo consulta localmente las sesiones que Windows expone y conserva de forma transitoria el nombre de la aplicación y su estado. Raudo sólo se conecta a Internet cuando el usuario selecciona **Buscar actualizaciones**. En una instalación local, puede descargar el paquete oficial después de una confirmación, validar su versión y sus sumas SHA-256, reemplazar el ejecutable de forma atómica y reiniciarse. Una copia portable abre la publicación para actualización manual.
+Raudo no incluye telemetría, cuentas ni publicidad. Las búsquedas de Salto permanecen en memoria y se utilizan únicamente para filtrar resultados o producir un cálculo o conversión local; sólo se guardan la posición y el nivel de opacidad elegidos. El catálogo de aplicaciones se consulta a Windows bajo demanda; Raudo no recorre el disco ni conserva las consultas. Un resultado sólo se escribe en el portapapeles después de seleccionarlo. Las órdenes de voz utilizan una gramática local y sólo existen durante la sesión de escucha iniciada por el usuario. Los controles multimedia automáticos envían comandos fijos; al abrir el selector de Mini, Raudo consulta localmente las sesiones que Windows expone y conserva de forma transitoria el nombre de la aplicación y su estado. Raudo sólo se conecta directamente a Internet cuando el usuario selecciona **Buscar actualizaciones**. Las acciones de YouTube o clima abren el navegador predeterminado, que administra su propia conexión. En una instalación local, Raudo puede descargar el paquete oficial después de una confirmación, validar su versión y sus sumas SHA-256, reemplazar el ejecutable de forma atómica y reiniciarse. Una copia portable abre la publicación para actualización manual.
 
 Consulta [PRIVACY.md](PRIVACY.md) para conocer los datos locales y el comportamiento de red.
 
