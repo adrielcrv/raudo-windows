@@ -7,6 +7,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using Raudo;
 
@@ -235,6 +236,22 @@ internal static class TestRunner
             }
 
             if (args.Length == 1
+                && string.Equals(args[0], "--resource-probe-mini-media", StringComparison.Ordinal))
+            {
+                RunMiniMediaResourceProbe();
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
+                && string.Equals(args[0], "--media-session-probe", StringComparison.Ordinal))
+            {
+                RunMediaSessionProbe();
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
                 && args[0].StartsWith("--application-launch-probe=", StringComparison.Ordinal))
             {
                 RunApplicationLaunchProbe(
@@ -253,6 +270,43 @@ internal static class TestRunner
             if (args.Length == 1 && args[0].StartsWith("--capture-mini-light=", StringComparison.Ordinal))
             {
                 CaptureMiniUi(args[0].Substring("--capture-mini-light=".Length), false, true);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
+                && args[0].StartsWith("--capture-mini-media-selected-dark=", StringComparison.Ordinal))
+            {
+                CaptureMiniMediaUi(
+                    args[0].Substring("--capture-mini-media-selected-dark=".Length),
+                    true,
+                    96,
+                    true);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
+                && args[0].StartsWith("--capture-mini-media-dark-150=", StringComparison.Ordinal))
+            {
+                CaptureMiniMediaUi(
+                    args[0].Substring("--capture-mini-media-dark-150=".Length),
+                    true,
+                    144,
+                    false);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
+                && args[0].StartsWith("--capture-mini-media-high-contrast=", StringComparison.Ordinal))
+            {
+                CaptureMiniMediaUi(
+                    args[0].Substring("--capture-mini-media-high-contrast=".Length),
+                    true,
+                    96,
+                    false,
+                    true);
                 Console.WriteLine("PASS");
                 return 0;
             }
@@ -785,6 +839,62 @@ internal static class TestRunner
         }
     }
 
+    private static void RunMiniMediaResourceProbe()
+    {
+        Application.EnableVisualStyles();
+        Application.SetCompatibleTextRenderingDefault(false);
+        MediaControlService fallback = new MediaControlService(
+            delegate(NativeMethods.Input[] inputs) { return (uint)inputs.Length; });
+        using (MediaSessionService sessions = new MediaSessionService(fallback))
+        using (VirtualDesktopService desktopService = new VirtualDesktopService())
+        {
+            MediaSessionSnapshot snapshot = sessions
+                .GetSnapshotAsync()
+                .GetAwaiter()
+                .GetResult();
+            Assert(snapshot.IsAvailable, snapshot.Error);
+            using (MiniForm form = new MiniForm(
+                desktopService,
+                new RaudoSettings(),
+                fallback,
+                sessions))
+            {
+                form.ShowMini();
+                form.SetNavigationAvailabilityForTesting(true, true);
+                form.SetExpandedForTesting(true);
+                Application.DoEvents();
+
+                Process process = Process.GetCurrentProcess();
+                process.Refresh();
+                TimeSpan cpuBefore = process.TotalProcessorTime;
+                Stopwatch elapsed = Stopwatch.StartNew();
+                while (elapsed.Elapsed < TimeSpan.FromSeconds(2))
+                {
+                    Application.DoEvents();
+                    Thread.Sleep(25);
+                }
+
+                process.Refresh();
+                double cpuMilliseconds =
+                    (process.TotalProcessorTime - cpuBefore).TotalMilliseconds;
+                double normalizedCpuPercent = cpuMilliseconds
+                    / elapsed.Elapsed.TotalMilliseconds
+                    / Math.Max(1, Environment.ProcessorCount)
+                    * 100D;
+                Console.WriteLine(
+                    "Mini multimedia: {0} sesiones · CPU {1:F3}% · Working set {2:F1} MB · Private {3:F1} MB",
+                    snapshot.Sessions.Count,
+                    normalizedCpuPercent,
+                    process.WorkingSet64 / 1024D / 1024D,
+                    process.PrivateMemorySize64 / 1024D / 1024D);
+                Assert(
+                    normalizedCpuPercent < 1D,
+                    "Mini multimedia excedió 1% de CPU en reposo.");
+                form.AllowCloseAndClose();
+            }
+        }
+    }
+
     private static void RunApplicationCatalogProbe()
     {
         InstalledApplicationCatalog catalog = new InstalledApplicationCatalog();
@@ -810,6 +920,28 @@ internal static class TestRunner
             "Aplicaciones disponibles: {0} · Carga: {1:F0} ms",
             applications.Count,
             elapsed.Elapsed.TotalMilliseconds);
+    }
+
+    private static void RunMediaSessionProbe()
+    {
+        MediaControlService fallback = new MediaControlService(
+            delegate(NativeMethods.Input[] inputs) { return (uint)inputs.Length; });
+        using (MediaSessionService service = new MediaSessionService(fallback))
+        {
+            MediaSessionSnapshot snapshot = service.GetSnapshotAsync().GetAwaiter().GetResult();
+            Assert(snapshot.IsAvailable, snapshot.Error);
+            Console.WriteLine("Sesiones multimedia: " + snapshot.Sessions.Count);
+            for (int index = 0; index < snapshot.Sessions.Count; index++)
+            {
+                MediaSessionDescriptor session = snapshot.Sessions[index];
+                Console.WriteLine(
+                    "- "
+                    + session.DisplayName
+                    + " · "
+                    + session.StatusText
+                    + (session.IsCurrent ? " · actual" : string.Empty));
+            }
+        }
     }
 
     private static void RunApplicationLaunchProbe(string applicationName)
@@ -1086,6 +1218,13 @@ internal static class TestRunner
         IList<MediaControlDefinition> mediaDefinitions =
             MediaControlCatalog.GetDefinitions();
         Assert(mediaDefinitions.Count == 6, "El catálogo multimedia no está acotado.");
+        Assert(
+            MediaSessionService.GetFriendlySourceName("Chrome.exe") == "Google Chrome",
+            "El selector no presenta Chrome con un nombre comprensible.");
+        Assert(
+            MediaSessionService.GetFriendlySourceName(
+                "SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify") == "Spotify",
+            "El selector no presenta Spotify con un nombre comprensible.");
 
         RaudoActionCatalog actionCatalog = CreateTestActionCatalog(null);
         actionCatalog.Refresh();
@@ -1360,8 +1499,15 @@ internal static class TestRunner
             mainForm.AllowCloseAndClose();
         }
 
+        MediaControlService miniMediaControl = new MediaControlService(
+            delegate(NativeMethods.Input[] inputs) { return (uint)inputs.Length; });
+        using (FakeMediaSessionService miniMediaSessions = new FakeMediaSessionService())
         using (VirtualDesktopService desktopService = new VirtualDesktopService())
-        using (MiniForm mini = new MiniForm(desktopService, new RaudoSettings()))
+        using (MiniForm mini = new MiniForm(
+            desktopService,
+            new RaudoSettings(),
+            miniMediaControl,
+            miniMediaSessions))
         {
             Assert(
                 mini.ClientSize == new Size(20, 48),
@@ -1371,13 +1517,37 @@ internal static class TestRunner
                 "El temporizador de movimiento no debe ejecutarse en reposo.");
             mini.SetExpandedForTesting(true);
             mini.SetNavigationAvailabilityForTesting(true, true);
-            Assert(mini.ClientSize.Width == 144, "No se mostraron ambas direcciones.");
+            Assert(
+                mini.ClientSize.Width == 264,
+                "Mini no mostró el controlador multimedia completo.");
             mini.SetNavigationAvailabilityForTesting(true, false);
-            Assert(mini.ClientSize.Width == 96, "No se ocultó la dirección derecha.");
+            Assert(mini.ClientSize.Width == 216, "No se ocultó la dirección derecha.");
             mini.SetNavigationAvailabilityForTesting(false, true);
-            Assert(mini.ClientSize.Width == 96, "No se ocultó la dirección izquierda.");
+            Assert(mini.ClientSize.Width == 216, "No se ocultó la dirección izquierda.");
             mini.SetNavigationAvailabilityForTesting(false, false);
-            Assert(mini.ClientSize.Width == 48, "El control sin direcciones no se compactó.");
+            Assert(
+                mini.ClientSize.Width == 168,
+                "El controlador sin escritorios adyacentes no se compactó.");
+            miniMediaSessions.SelectForTesting("Google Chrome", false, true);
+            mini.RefreshMediaStateForTesting();
+            Assert(
+                mini.ClientSize.Width == 128,
+                "Mini no omitió la pista anterior que el reproductor no admite.");
+            IList<string> miniMenuLabels = mini.BuildMenuLabelsForTesting(
+                miniMediaSessions.GetSnapshotAsync().GetAwaiter().GetResult());
+            Assert(
+                miniMenuLabels.Contains("Automático de Windows")
+                    && miniMenuLabels.Contains("Google Chrome · Reproduciendo · actual")
+                    && miniMenuLabels.Contains("Volumen de Windows")
+                    && miniMenuLabels.Contains("Traer ventana"),
+                "El menú de Mini no reunió reproductor, volumen y ventanas.");
+            mini.ExecuteMediaCommandForTesting(MediaCommand.TogglePlayPause);
+            Application.DoEvents();
+            Assert(
+                miniMediaSessions.LastCommand == MediaCommand.TogglePlayPause,
+                "Mini no dirigió play o pausa al servicio multimedia seleccionado.");
+            miniMediaSessions.SelectAutomatic();
+            mini.RefreshMediaStateForTesting();
             mini.SetExpandedForTesting(false);
             Assert(
                 mini.ClientSize == new Size(20, 48),
@@ -1385,7 +1555,7 @@ internal static class TestRunner
             mini.SetNavigationAvailabilityForTesting(true, true);
             mini.SetRevealProgressForTesting(0.5D);
             Assert(
-                mini.ClientSize == new Size(82, 48),
+                mini.ClientSize == new Size(142, 48),
                 "La geometría intermedia de la transición no es estable.");
             mini.SetRevealProgressForTesting(0D);
             mini.SetNotificationStateForTesting(UserNotificationState.AcceptsNotifications);
@@ -1396,6 +1566,13 @@ internal static class TestRunner
             Assert(
                 Math.Abs(mini.WindowOpacityForTesting - 0.38D) < 0.01D,
                 "Mini no reduce su presencia durante pantalla completa.");
+            mini.ApplyTheme(highContrast);
+            mini.SetDpiForTesting(144);
+            mini.SetNavigationAvailabilityForTesting(true, true);
+            mini.SetExpandedForTesting(true);
+            Assert(
+                mini.ClientSize == new Size(396, 72),
+                "El controlador Mini no conserva su geometría al 150 por ciento.");
             mini.AllowCloseAndClose();
         }
 
@@ -1999,6 +2176,128 @@ internal static class TestRunner
                 File.WriteAllText(handlePath, form.Handle.ToInt64().ToString());
             };
             Application.Run(form);
+        }
+    }
+
+    private static void CaptureMiniMediaUi(
+        string path,
+        bool dark,
+        int dpi,
+        bool selectedSession)
+    {
+        CaptureMiniMediaUi(path, dark, dpi, selectedSession, false);
+    }
+
+    private static void CaptureMiniMediaUi(
+        string path,
+        bool dark,
+        int dpi,
+        bool selectedSession,
+        bool highContrast)
+    {
+        Application.EnableVisualStyles();
+        Application.SetCompatibleTextRenderingDefault(false);
+        MediaControlService mediaControl = new MediaControlService(
+            delegate(NativeMethods.Input[] inputs) { return (uint)inputs.Length; });
+        using (FakeMediaSessionService sessions = new FakeMediaSessionService())
+        using (VirtualDesktopService service = new VirtualDesktopService())
+        using (MiniForm form = new MiniForm(
+            service,
+            new RaudoSettings(),
+            mediaControl,
+            sessions))
+        {
+            if (selectedSession)
+            {
+                sessions.SelectForTesting("Google Chrome", false, true);
+            }
+
+            form.ShowMini();
+            form.ApplyTheme(
+                highContrast
+                    ? ThemePalette.CreateHighContrast()
+                    : ThemePalette.Create(dark));
+            form.SetNavigationAvailabilityForTesting(true, true);
+            form.SetDpiForTesting(dpi);
+            form.SetExpandedForTesting(true);
+            form.RefreshMediaStateForTesting();
+            Application.DoEvents();
+            Thread.Sleep(100);
+            Application.DoEvents();
+            using (Bitmap bitmap = new Bitmap(form.ClientSize.Width, form.ClientSize.Height))
+            {
+                form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, form.ClientSize));
+                bitmap.Save(path, ImageFormat.Png);
+            }
+            form.AllowCloseAndClose();
+        }
+    }
+
+    private sealed class FakeMediaSessionService : IMediaSessionService
+    {
+        public bool HasSelectedSession { get; private set; }
+        public string SelectedDisplayName { get; private set; }
+        public bool CanPrevious { get; private set; }
+        public bool CanNext { get; private set; }
+        public MediaCommand? LastCommand { get; private set; }
+
+        public FakeMediaSessionService()
+        {
+            SelectedDisplayName = string.Empty;
+            CanPrevious = true;
+            CanNext = true;
+        }
+
+        public Task<MediaSessionSnapshot> GetSnapshotAsync()
+        {
+            List<MediaSessionDescriptor> sessions = new List<MediaSessionDescriptor>();
+            sessions.Add(new MediaSessionDescriptor(
+                "test",
+                "Google Chrome",
+                "Reproduciendo",
+                true,
+                HasSelectedSession,
+                true,
+                CanPrevious,
+                CanNext));
+            return Task.FromResult(new MediaSessionSnapshot(true, string.Empty, sessions));
+        }
+
+        public bool TrySelect(string id)
+        {
+            if (!string.Equals(id, "test", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            SelectForTesting("Google Chrome", true, true);
+            return true;
+        }
+
+        public void SelectAutomatic()
+        {
+            HasSelectedSession = false;
+            SelectedDisplayName = string.Empty;
+            CanPrevious = true;
+            CanNext = true;
+        }
+
+        public Task<string> TryExecuteAsync(MediaCommand command)
+        {
+            LastCommand = command;
+            return Task.FromResult(string.Empty);
+        }
+
+        public void SelectForTesting(string displayName, bool canPrevious, bool canNext)
+        {
+            HasSelectedSession = true;
+            SelectedDisplayName = displayName;
+            CanPrevious = canPrevious;
+            CanNext = canNext;
+        }
+
+        public void Dispose()
+        {
         }
     }
 

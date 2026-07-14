@@ -857,7 +857,11 @@ namespace Raudo
         {
             if (miniForm == null || miniForm.IsDisposed)
             {
-                miniForm = new MiniForm(virtualDesktopService, settings);
+                miniForm = new MiniForm(
+                    virtualDesktopService,
+                    settings,
+                    mediaControlService,
+                    null);
                 miniForm.OpenMainRequested += MiniOpenMainRequested;
                 miniForm.HideRequested += MiniHideRequested;
                 miniForm.PinHelpRequested += MiniPinHelpRequested;

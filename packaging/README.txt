@@ -35,9 +35,15 @@ reproductores, títulos ni contenido.
 MODO MINI
 
 Raudo Mini se recoge como una pestaña estrecha en el borde de la pantalla. Al
-acercar el cursor aparecen únicamente las direcciones de escritorio disponibles.
-El botón central muestra las ventanas abiertas en otros escritorios y permite
-traer una al escritorio actual.
+acercar el cursor aparecen las direcciones de escritorio disponibles y controles
+directos para pista anterior, reproducción o pausa y pista siguiente. El botón
+de opciones permite elegir una sesión multimedia expuesta por Windows, ajustar
+el volumen global y traer una ventana desde otro escritorio.
+
+La selección de reproductor utiliza únicamente el nombre de la aplicación, su
+estado y las capacidades que Windows declara. Raudo no consulta títulos,
+contenido, direcciones, carátulas ni pestañas. Si no se elige una sesión,
+Windows decide qué reproductor recibe el comando.
 
 La pestaña sigue automáticamente al escritorio activo. Si una versión de
 Windows no permite esta función, Raudo muestra la alternativa mediante Win + Tab.

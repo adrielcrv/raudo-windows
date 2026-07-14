@@ -34,9 +34,11 @@ Raudo no lee el contenido de las ventanas, no recorre ni indexa archivos, no con
 
 ## Controles multimedia
 
-Las acciones multimedia envían únicamente uno de seis comandos fijos de reproducción o volumen documentados por Windows después de una selección explícita. El texto de búsqueda no puede convertirse en una tecla o comando arbitrario.
+En el modo automático, las acciones multimedia envían únicamente uno de seis comandos fijos de reproducción o volumen documentados por Windows después de una selección explícita. El texto de búsqueda no puede convertirse en una tecla o comando arbitrario.
 
-Raudo no consulta qué aplicación responde, ni lee sesiones multimedia, títulos, contenido, progreso, carátulas o historial. Estas acciones no mantienen sondeo, suscripciones, temporizadores ni conexiones de red.
+Al abrir las opciones multimedia de Mini, Raudo solicita a Windows la lista de sesiones disponibles. Para permitir elegir un reproductor, utiliza únicamente el identificador de la aplicación, el estado de reproducción y las capacidades de control declaradas por esa sesión. Esta información permanece en memoria y se actualiza al volver a abrir el menú; no se almacena ni se envía por la red.
+
+Raudo no solicita títulos, contenido, direcciones, progreso, carátulas o historial. Tampoco inspecciona pestañas, ventanas, procesos o audio para identificar el reproductor. La selección no mantiene sondeo, temporizadores ni conexiones de red y vuelve al comando multimedia estándar cuando el usuario elige **Automático de Windows**.
 
 ## Conexiones de red
 

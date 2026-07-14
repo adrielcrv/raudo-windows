@@ -1,5 +1,11 @@
 # Avisos de terceros
 
+## Microsoft.Windows.SDK.Contracts
+
+La compilación utiliza `Microsoft.Windows.SDK.Contracts` 10.0.19041.2 como metadatos de referencia para las API de Windows Runtime. Estos archivos no se incluyen en el paquete de Raudo.
+
+Copyright © Microsoft Corporation. Su uso está sujeto a los [términos del Windows SDK](https://aka.ms/WinSDKLicenseURL).
+
 ## VirtualDesktop
 
 Las definiciones de interoperabilidad utilizadas para mover ventanas entre escritorios virtuales se basan en el proyecto [VirtualDesktop](https://github.com/MScholtes/VirtualDesktop).
