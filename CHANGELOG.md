@@ -4,6 +4,15 @@ Este proyecto utiliza versionado semántico.
 
 ## [Sin publicar]
 
+## [1.2.0] - 2026-07-13
+
+- Nuevo lanzador Salto para buscar y ejecutar acciones locales con `Ctrl + Alt + Espacio`.
+- Catálogo limitado a funciones internas de Raudo, sin scripts, historial, indexación ni conexiones adicionales.
+- Acciones para Pulso, Recortes, la ventana principal, Modo Mini y escritorios virtuales disponibles.
+- Navegación completa por teclado, búsqueda sin distinción de mayúsculas o acentos y acceso alternativo desde la bandeja.
+- Rediseño compacto de la ventana principal con componentes reutilizables y estados visuales más discretos.
+- Compatibilidad explícita con alto contraste, escalado de pantalla y reducción de movimiento.
+
 ## [1.1.0] - 2026-07-13
 
 - Nuevo nombre Pulso para la función de disponibilidad temporal y sus recordatorios.

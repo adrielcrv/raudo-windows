@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
@@ -33,6 +34,77 @@ internal static class TestRunner
             if (args.Length == 1 && args[0].StartsWith("--capture-ui-light=", StringComparison.Ordinal))
             {
                 CaptureUi(args[0].Substring("--capture-ui-light=".Length), false);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1 && args[0].StartsWith("--capture-ui-active-dark=", StringComparison.Ordinal))
+            {
+                CaptureUi(
+                    args[0].Substring("--capture-ui-active-dark=".Length),
+                    true,
+                    true);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1 && args[0].StartsWith("--capture-ui-dark-150=", StringComparison.Ordinal))
+            {
+                CaptureUiScaled(
+                    args[0].Substring("--capture-ui-dark-150=".Length),
+                    true,
+                    1.5F);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1 && string.Equals(args[0], "--resource-probe", StringComparison.Ordinal))
+            {
+                RunResourceProbe();
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1 && args[0].StartsWith("--capture-salto-dark=", StringComparison.Ordinal))
+            {
+                CaptureSalto(
+                    args[0].Substring("--capture-salto-dark=".Length),
+                    true,
+                    string.Empty);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1 && args[0].StartsWith("--capture-salto-light=", StringComparison.Ordinal))
+            {
+                CaptureSalto(
+                    args[0].Substring("--capture-salto-light=".Length),
+                    false,
+                    string.Empty);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1 && args[0].StartsWith("--capture-salto-filtered-dark=", StringComparison.Ordinal))
+            {
+                CaptureSalto(
+                    args[0].Substring("--capture-salto-filtered-dark=".Length),
+                    true,
+                    "captura");
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1 && string.Equals(args[0], "--resource-probe-salto", StringComparison.Ordinal))
+            {
+                RunSaltoResourceProbe();
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1 && string.Equals(args[0], "--hotkey-probe", StringComparison.Ordinal))
+            {
+                RunHotKeyProbe();
                 Console.WriteLine("PASS");
                 return 0;
             }
@@ -126,12 +198,23 @@ internal static class TestRunner
 
     private static void CaptureUi(string path, bool? dark)
     {
+        CaptureUi(path, dark, false);
+    }
+
+    private static void CaptureUi(string path, bool? dark, bool active)
+    {
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
         using (KeepActiveService service = new KeepActiveService())
         using (Icon icon = IconFactory.Create(false))
         using (MainForm form = new MainForm(service, new RaudoSettings(), icon))
         {
+            if (active)
+            {
+                service.Start(30);
+                form.RefreshState();
+            }
+
             form.Show();
             Application.DoEvents();
             if (dark.HasValue)
@@ -156,6 +239,210 @@ internal static class TestRunner
                 }
             }
             form.AllowCloseAndClose();
+        }
+    }
+
+    private static void CaptureUiScaled(string path, bool dark, float scaleFactor)
+    {
+        Application.EnableVisualStyles();
+        Application.SetCompatibleTextRenderingDefault(false);
+        using (KeepActiveService service = new KeepActiveService())
+        using (Icon icon = IconFactory.Create(false))
+        using (MainForm form = new MainForm(service, new RaudoSettings(), icon))
+        {
+            form.ApplyTheme(ThemePalette.Create(dark));
+            form.Scale(new SizeF(scaleFactor, scaleFactor));
+            form.Show();
+            Application.DoEvents();
+            Thread.Sleep(150);
+            Application.DoEvents();
+            using (Bitmap full = new Bitmap(form.Width, form.Height))
+            {
+                form.DrawToBitmap(full, new Rectangle(0, 0, form.Width, form.Height));
+                int border = Math.Max(0, (form.Width - form.ClientSize.Width) / 2);
+                int top = Math.Max(0, form.Height - form.ClientSize.Height - border);
+                Rectangle clientBounds = new Rectangle(
+                    border,
+                    top,
+                    form.ClientSize.Width,
+                    form.ClientSize.Height);
+                using (Bitmap client = full.Clone(clientBounds, PixelFormat.Format32bppArgb))
+                {
+                    client.Save(path, ImageFormat.Png);
+                }
+            }
+
+            form.AllowCloseAndClose();
+        }
+    }
+
+    private static void RunResourceProbe()
+    {
+        Application.EnableVisualStyles();
+        Application.SetCompatibleTextRenderingDefault(false);
+        using (KeepActiveService service = new KeepActiveService())
+        using (Icon icon = IconFactory.Create(false))
+        using (MainForm form = new MainForm(service, new RaudoSettings(), icon))
+        using (Process process = Process.GetCurrentProcess())
+        {
+            form.Show();
+            Application.DoEvents();
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+
+            TimeSpan cpuBefore = process.TotalProcessorTime;
+            Stopwatch elapsed = Stopwatch.StartNew();
+            while (elapsed.Elapsed < TimeSpan.FromSeconds(5))
+            {
+                Application.DoEvents();
+                Thread.Sleep(50);
+            }
+
+            elapsed.Stop();
+            process.Refresh();
+            TimeSpan cpuUsed = process.TotalProcessorTime - cpuBefore;
+            double normalizedCpuPercent = cpuUsed.TotalMilliseconds
+                / elapsed.Elapsed.TotalMilliseconds
+                / Math.Max(1, Environment.ProcessorCount)
+                * 100D;
+            Console.WriteLine(
+                "Idle CPU: {0:F3}% · Working set: {1:F1} MB · Private: {2:F1} MB",
+                normalizedCpuPercent,
+                process.WorkingSet64 / 1024D / 1024D,
+                process.PrivateMemorySize64 / 1024D / 1024D);
+            Assert(normalizedCpuPercent < 1D, "La interfaz excedió 1% de CPU en reposo.");
+            form.AllowCloseAndClose();
+        }
+    }
+
+    private static void CaptureSalto(string path, bool dark, string query)
+    {
+        Application.EnableVisualStyles();
+        Application.SetCompatibleTextRenderingDefault(false);
+        RaudoActionCatalog catalog = CreateTestActionCatalog(null);
+        using (SaltoForm form = new SaltoForm(catalog))
+        {
+            form.ApplyTheme(ThemePalette.Create(dark));
+            form.ShowSalto();
+            if (!string.IsNullOrWhiteSpace(query))
+            {
+                form.SetQueryForTesting(query);
+            }
+
+            Application.DoEvents();
+            Thread.Sleep(220);
+            Application.DoEvents();
+            Assert(!form.TransitionRunningForTesting, "La transición de Salto no se detuvo.");
+            using (Bitmap bitmap = new Bitmap(form.ClientSize.Width, form.ClientSize.Height))
+            {
+                form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, form.ClientSize));
+                bitmap.Save(path, ImageFormat.Png);
+            }
+
+            form.AllowCloseAndClose();
+        }
+    }
+
+    private static void RunSaltoResourceProbe()
+    {
+        Application.EnableVisualStyles();
+        Application.SetCompatibleTextRenderingDefault(false);
+        RaudoActionCatalog catalog = CreateTestActionCatalog(null);
+        using (SaltoForm form = new SaltoForm(catalog))
+        using (Process process = Process.GetCurrentProcess())
+        {
+            form.ShowSalto();
+            Application.DoEvents();
+            Thread.Sleep(220);
+            Application.DoEvents();
+            Assert(!form.TransitionRunningForTesting, "La transición de Salto no se detuvo.");
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+
+            TimeSpan cpuBefore = process.TotalProcessorTime;
+            Stopwatch elapsed = Stopwatch.StartNew();
+            while (elapsed.Elapsed < TimeSpan.FromSeconds(5))
+            {
+                Application.DoEvents();
+                Thread.Sleep(50);
+            }
+
+            elapsed.Stop();
+            process.Refresh();
+            TimeSpan cpuUsed = process.TotalProcessorTime - cpuBefore;
+            double normalizedCpuPercent = cpuUsed.TotalMilliseconds
+                / elapsed.Elapsed.TotalMilliseconds
+                / Math.Max(1, Environment.ProcessorCount)
+                * 100D;
+            Console.WriteLine(
+                "Salto idle CPU: {0:F3}% · Working set: {1:F1} MB · Private: {2:F1} MB",
+                normalizedCpuPercent,
+                process.WorkingSet64 / 1024D / 1024D,
+                process.PrivateMemorySize64 / 1024D / 1024D);
+            Assert(normalizedCpuPercent < 1D, "Salto excedió 1% de CPU en reposo.");
+            form.AllowCloseAndClose();
+        }
+    }
+
+    private static RaudoActionCatalog CreateTestActionCatalog(Action invoked)
+    {
+        return new RaudoActionCatalog(delegate
+        {
+            Action execute = invoked ?? delegate { };
+            return new List<RaudoAction>
+            {
+                new RaudoAction(
+                    "pulse.toggle",
+                    "Iniciar Pulso",
+                    "Mantener disponible durante 30 minutos",
+                    "mouse ausencia activo",
+                    string.Empty,
+                    RaudoActionGlyph.Pulse,
+                    execute),
+                new RaudoAction(
+                    "capture.screen",
+                    "Recortar pantalla",
+                    "Seleccionar una región con la herramienta de Windows",
+                    "captura screenshot crop",
+                    "Win + Shift + S",
+                    RaudoActionGlyph.Capture,
+                    execute),
+                new RaudoAction(
+                    "window.main",
+                    "Abrir Raudo",
+                    "Mostrar controles y preferencias",
+                    "configuración ajustes",
+                    string.Empty,
+                    RaudoActionGlyph.MainWindow,
+                    execute),
+                new RaudoAction(
+                    "mini.toggle",
+                    "Mostrar Modo Mini",
+                    "Navegar entre escritorios desde el borde",
+                    "ventanas burbuja",
+                    string.Empty,
+                    RaudoActionGlyph.Mini,
+                    execute)
+            };
+        });
+    }
+
+    private static void RunHotKeyProbe()
+    {
+        Application.EnableVisualStyles();
+        using (GlobalHotKey hotKey = new GlobalHotKey(
+            HotKeyModifiers.Control
+                | HotKeyModifiers.Alt
+                | HotKeyModifiers.NoRepeat,
+            Keys.Space))
+        {
+            Console.WriteLine(
+                hotKey.IsRegistered
+                    ? "Ctrl + Alt + Espacio disponible"
+                    : "Registro fallido: " + hotKey.RegistrationError);
+            Assert(hotKey.IsRegistered, "No se pudo registrar el atajo global de Salto.");
         }
     }
 
@@ -326,8 +613,76 @@ internal static class TestRunner
 
         ThemePalette light = ThemePalette.Create(false);
         ThemePalette dark = ThemePalette.Create(true);
+        ThemePalette highContrast = ThemePalette.CreateHighContrast();
         Assert(!light.IsDark && dark.IsDark, "Los temas no conservan su modo.");
         Assert(light.Primary != dark.Primary, "Los temas deben tener paletas independientes.");
+        Assert(highContrast.IsHighContrast, "La paleta de alto contraste no se identificó.");
+        Assert(
+            highContrast.Text == SystemColors.WindowText,
+            "Alto contraste debe respetar el color de texto del sistema.");
+        Assert(
+            highContrast.PrimaryForeground == SystemColors.HighlightText,
+            "Alto contraste debe respetar el texto de selección del sistema.");
+
+        RaudoActionCatalog actionCatalog = CreateTestActionCatalog(null);
+        actionCatalog.Refresh();
+        Assert(actionCatalog.Count == 4, "El catálogo no cargó todas las acciones.");
+        Assert(
+            actionCatalog.Search("captura")[0].Id == "capture.screen",
+            "La búsqueda por palabra clave no encontró Recortar.");
+        Assert(
+            actionCatalog.Search("configuracion")[0].Id == "window.main",
+            "La búsqueda no ignoró acentos.");
+        Assert(
+            actionCatalog.Search("pulso")[0].Id == "pulse.toggle",
+            "La coincidencia de título no conservó prioridad.");
+        Assert(
+            actionCatalog.Search("sin coincidencia").Count == 0,
+            "Una búsqueda desconocida devolvió acciones.");
+        int actionInvocationCount = 0;
+        RaudoActionCatalog executableCatalog = CreateTestActionCatalog(
+            delegate { actionInvocationCount++; });
+        executableCatalog.Refresh();
+        executableCatalog.Search("pulso")[0].Execute();
+        Assert(actionInvocationCount == 1, "El catálogo no ejecutó la acción seleccionada.");
+
+        using (SaltoForm salto = new SaltoForm(actionCatalog))
+        {
+            salto.ApplyTheme(highContrast);
+            salto.SetQueryForTesting(string.Empty);
+            Assert(salto.ResultCountForTesting == 4, "Salto no mostró el catálogo completo.");
+            salto.MoveSelectionForTesting(-1);
+            Assert(
+                salto.SelectedActionIdForTesting == "mini.toggle",
+                "La navegación hacia arriba no envolvió la selección.");
+            salto.MoveSelectionForTesting(1);
+            Assert(
+                salto.SelectedActionIdForTesting == "pulse.toggle",
+                "La navegación hacia abajo no envolvió la selección.");
+            salto.SetQueryForTesting("captura");
+            Assert(salto.ResultCountForTesting == 1, "Salto no filtró los resultados.");
+            Assert(
+                salto.SelectedActionIdForTesting == "capture.screen",
+                "Salto no seleccionó el primer resultado.");
+            AssertAccessibleControls(salto);
+            ScaleToTargetDpi(salto, 144);
+            AssertControlsWithinParent(salto);
+            salto.AllowCloseAndClose();
+        }
+
+        using (KeepActiveService mainService = new KeepActiveService())
+        using (Icon mainIcon = IconFactory.Create(false))
+        using (MainForm mainForm = new MainForm(
+            mainService,
+            new RaudoSettings(),
+            mainIcon))
+        {
+            mainForm.ApplyTheme(highContrast);
+            AssertAccessibleControls(mainForm);
+            ScaleToTargetDpi(mainForm, 144);
+            AssertControlsWithinParent(mainForm);
+            mainForm.AllowCloseAndClose();
+        }
 
         using (VirtualDesktopService desktopService = new VirtualDesktopService())
         using (MiniForm mini = new MiniForm(desktopService, new RaudoSettings()))
@@ -941,5 +1296,56 @@ internal static class TestRunner
         {
             throw new InvalidOperationException(message);
         }
+    }
+
+    private static void AssertAccessibleControls(Control parent)
+    {
+        foreach (Control child in parent.Controls)
+        {
+            if (child.TabStop && child.Enabled)
+            {
+                Assert(
+                    !string.IsNullOrWhiteSpace(child.AccessibleName)
+                        || !string.IsNullOrWhiteSpace(child.Text),
+                    "Un control interactivo no tiene nombre accesible: "
+                        + child.GetType().Name);
+            }
+
+            AssertAccessibleControls(child);
+        }
+    }
+
+    private static void AssertControlsWithinParent(Control parent)
+    {
+        Rectangle available = parent.DisplayRectangle;
+        foreach (Control child in parent.Controls)
+        {
+            Assert(
+                child.Left >= available.Left
+                    && child.Top >= available.Top
+                    && child.Right <= available.Right
+                    && child.Bottom <= available.Bottom,
+                "Un control salió de su superficie a escala ampliada: "
+                    + child.GetType().Name
+                    + ". Control="
+                    + child.Bounds
+                    + ", superficie="
+                    + available
+                    + ", DPI="
+                    + parent.DeviceDpi);
+            AssertControlsWithinParent(child);
+        }
+    }
+
+    private static void ScaleToTargetDpi(Control control, int targetDpi)
+    {
+        int currentDpi = Math.Max(96, control.DeviceDpi);
+        float factor = targetDpi / (float)currentDpi;
+        if (Math.Abs(factor - 1F) > 0.001F)
+        {
+            control.Scale(new SizeF(factor, factor));
+        }
+
+        control.PerformLayout();
     }
 }

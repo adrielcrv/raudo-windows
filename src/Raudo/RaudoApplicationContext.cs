@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Threading;
 using System.Windows.Forms;
@@ -14,6 +15,7 @@ namespace Raudo
         private readonly NotifyIcon notifyIcon;
         private readonly ContextMenuStrip trayMenu;
         private readonly ToolStripMenuItem statusItem;
+        private readonly ToolStripMenuItem saltoItem;
         private readonly ToolStripMenuItem toggleItem;
         private readonly ToolStripMenuItem durationMenu;
         private readonly ToolStripMenuItem startupItem;
@@ -25,8 +27,11 @@ namespace Raudo
         private readonly RegisteredWaitHandle showRequestRegistration;
         private readonly MainForm form;
         private readonly VirtualDesktopService virtualDesktopService;
+        private readonly RaudoActionCatalog actionCatalog;
+        private readonly GlobalHotKey saltoHotKey;
 
         private MiniForm miniForm;
+        private SaltoForm saltoForm;
         private ConnectedMinimizeTransition minimizeTransition;
         private KeepActivePhase? pendingReminder;
         private DateTime pendingReminderExpiresUtc;
@@ -44,6 +49,7 @@ namespace Raudo
             keepActiveService.StateChanged += KeepActiveServiceStateChanged;
             keepActiveService.AttentionRequired += KeepActiveServiceAttentionRequired;
             virtualDesktopService = new VirtualDesktopService();
+            actionCatalog = new RaudoActionCatalog(CreateSaltoActions);
 
             form = new MainForm(keepActiveService, settings, idleIcon);
             form.ToggleRequested += ToggleRequested;
@@ -62,6 +68,12 @@ namespace Raudo
             statusItem.Enabled = false;
             statusItem.Font = new Font(trayMenu.Font, FontStyle.Bold);
             trayMenu.Items.Add(statusItem);
+
+            saltoItem = new ToolStripMenuItem("Abrir Salto");
+            saltoItem.ShortcutKeyDisplayString = "Ctrl + Alt + Espacio";
+            saltoItem.Click += delegate { ShowSalto(); };
+            trayMenu.Items.Add(saltoItem);
+            trayMenu.Items.Add(new ToolStripSeparator());
 
             toggleItem = new ToolStripMenuItem();
             toggleItem.Click += ToggleRequested;
@@ -116,6 +128,18 @@ namespace Raudo
 
             dispatcher = new Control();
             IntPtr dispatcherHandle = dispatcher.Handle;
+            saltoHotKey = new GlobalHotKey(
+                HotKeyModifiers.Control
+                    | HotKeyModifiers.Alt
+                    | HotKeyModifiers.NoRepeat,
+                Keys.Space);
+            saltoHotKey.Pressed += SaltoHotKeyPressed;
+            form.SetSaltoShortcutAvailable(saltoHotKey.IsRegistered);
+            if (!saltoHotKey.IsRegistered)
+            {
+                saltoItem.ShortcutKeyDisplayString = "Atajo no disponible";
+            }
+
             showRequestRegistration = ThreadPool.RegisterWaitForSingleObject(
                 showRequestEvent,
                 ShowRequestSignaled,
@@ -146,6 +170,89 @@ namespace Raudo
             item.Tag = minutes;
             item.Click += DurationMenuItemClick;
             durationMenu.DropDownItems.Add(item);
+        }
+
+        private IList<RaudoAction> CreateSaltoActions()
+        {
+            List<RaudoAction> actions = new List<RaudoAction>();
+            bool active = keepActiveService.IsActive;
+            string duration = DurationOption.GetLabel(settings.DurationMinutes).ToLowerInvariant();
+            actions.Add(new RaudoAction(
+                "pulse.toggle",
+                active ? "Detener Pulso" : "Iniciar Pulso",
+                active
+                    ? "Sesión activa · "
+                        + FormatRemaining(keepActiveService.GetRemaining() ?? TimeSpan.Zero)
+                    : "Mantener disponible durante " + duration,
+                "mantener activo disponibilidad ausencia mouse iniciar detener",
+                string.Empty,
+                RaudoActionGlyph.Pulse,
+                delegate { ToggleRequested(this, EventArgs.Empty); }));
+
+            actions.Add(new RaudoAction(
+                "capture.screen",
+                "Recortar pantalla",
+                "Seleccionar una región con la herramienta de Windows",
+                "captura screenshot recorte crop pantalla imagen",
+                "Win + Shift + S",
+                RaudoActionGlyph.Capture,
+                delegate { ScreenCaptureRequested(this, EventArgs.Empty); }));
+
+            actions.Add(new RaudoAction(
+                "window.main",
+                "Abrir Raudo",
+                "Mostrar controles y preferencias",
+                "ventana principal configuracion ajustes preferencias",
+                string.Empty,
+                RaudoActionGlyph.MainWindow,
+                ShowWindow));
+
+            if (virtualDesktopService.IsAvailable)
+            {
+                actions.Add(new RaudoAction(
+                    "mini.toggle",
+                    settings.MiniModeEnabled ? "Ocultar Modo Mini" : "Mostrar Modo Mini",
+                    settings.MiniModeEnabled
+                        ? "Retirar el control del borde"
+                        : "Navegar entre escritorios desde el borde",
+                    "mini burbuja borde escritorios ventanas mostrar ocultar",
+                    string.Empty,
+                    RaudoActionGlyph.Mini,
+                    delegate { SetMiniMode(!settings.MiniModeEnabled, true); }));
+
+                bool canNavigateLeft;
+                bool canNavigateRight;
+                if (virtualDesktopService.TryGetNavigationAvailability(
+                    out canNavigateLeft,
+                    out canNavigateRight))
+                {
+                    if (canNavigateLeft)
+                    {
+                        actions.Add(new RaudoAction(
+                            "desktop.left",
+                            "Escritorio anterior",
+                            "Cambiar al escritorio virtual de la izquierda",
+                            "escritorio anterior izquierda cambiar navegar",
+                            "Ctrl + Win + ←",
+                            RaudoActionGlyph.DesktopLeft,
+                            delegate { SwitchDesktop(DesktopDirection.Left); }));
+                    }
+
+                    if (canNavigateRight)
+                    {
+                        actions.Add(new RaudoAction(
+                            "desktop.right",
+                            "Escritorio siguiente",
+                            "Cambiar al escritorio virtual de la derecha",
+                            "escritorio siguiente derecha cambiar navegar",
+                            "Ctrl + Win + →",
+                            RaudoActionGlyph.DesktopRight,
+                            delegate { SwitchDesktop(DesktopDirection.Right); }));
+                    }
+                }
+            }
+
+            return actions;
         }
 
         private void ToggleRequested(object sender, EventArgs eventArgs)
@@ -195,6 +302,19 @@ namespace Raudo
                     "Raudo",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
+            }
+        }
+
+        private void SwitchDesktop(DesktopDirection direction)
+        {
+            string error;
+            if (!DesktopNavigation.TrySwitch(direction, out error))
+            {
+                MessageBox.Show(
+                    error ?? "Windows no pudo cambiar de escritorio.",
+                    "Raudo",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
             }
         }
 
@@ -409,6 +529,11 @@ namespace Raudo
             {
                 RunOnUiThread(delegate
                 {
+                    if (saltoForm != null)
+                    {
+                        saltoForm.HideSalto();
+                    }
+
                     if (keepActiveService.IsActive)
                     {
                         keepActiveService.Stop("Detenido al cerrar la sesión interactiva");
@@ -451,6 +576,11 @@ namespace Raudo
                 {
                     ThemePalette current = ThemeService.Current();
                     form.ApplyTheme(current);
+                    if (saltoForm != null)
+                    {
+                        saltoForm.ApplyTheme(current);
+                    }
+
                     if (miniForm != null)
                     {
                         miniForm.ApplyTheme(current);
@@ -466,6 +596,11 @@ namespace Raudo
                 if (miniForm != null)
                 {
                     miniForm.EnsureVisibleOnScreen();
+                }
+
+                if (saltoForm != null)
+                {
+                    saltoForm.EnsureVisibleOnScreen();
                 }
             });
         }
@@ -491,6 +626,37 @@ namespace Raudo
             if (!exiting)
             {
                 form.ShowFromTray();
+            }
+        }
+
+        private void ShowSalto()
+        {
+            if (exiting)
+            {
+                return;
+            }
+
+            EnsureSaltoForm();
+            saltoForm.ShowSalto();
+        }
+
+        private void SaltoHotKeyPressed(object sender, EventArgs eventArgs)
+        {
+            if (exiting)
+            {
+                return;
+            }
+
+            EnsureSaltoForm();
+            saltoForm.ToggleSalto();
+        }
+
+        private void EnsureSaltoForm()
+        {
+            if (saltoForm == null || saltoForm.IsDisposed)
+            {
+                saltoForm = new SaltoForm(actionCatalog);
+                saltoForm.ApplyTheme(ThemeService.Current());
             }
         }
 
@@ -696,6 +862,8 @@ namespace Raudo
             keepActiveService.AttentionRequired -= KeepActiveServiceAttentionRequired;
             form.MinimizeRequested -= MainFormMinimizeRequested;
             form.UpdateRestartRequested -= MainFormUpdateRestartRequested;
+            saltoHotKey.Pressed -= SaltoHotKeyPressed;
+            saltoHotKey.Dispose();
             reminderRetryTimer.Stop();
             if (minimizeTransition != null)
             {
@@ -704,6 +872,13 @@ namespace Raudo
             }
             notifyIcon.Visible = false;
             keepActiveService.Dispose();
+            if (saltoForm != null)
+            {
+                saltoForm.AllowCloseAndClose();
+                saltoForm.Dispose();
+                saltoForm = null;
+            }
+
             DestroyMiniForm();
             virtualDesktopService.Dispose();
             form.AllowCloseAndClose();

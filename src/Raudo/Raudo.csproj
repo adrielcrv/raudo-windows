@@ -43,7 +43,10 @@
     <Reference Include="System.Windows.Forms" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="ActionCatalog.cs" />
     <Compile Include="Controls.cs" />
+    <Compile Include="DashboardControls.cs" />
+    <Compile Include="GlobalHotKey.cs" />
     <Compile Include="KeepActiveService.cs" />
     <Compile Include="MainForm.cs" />
     <Compile Include="MiniForm.cs" />
@@ -51,6 +54,7 @@
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="RaudoApplicationContext.cs" />
+    <Compile Include="SaltoForm.cs" />
     <Compile Include="SettingsStore.cs" />
     <Compile Include="Theme.cs" />
     <Compile Include="UpdateService.cs" />

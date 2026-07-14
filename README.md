@@ -10,7 +10,7 @@ Raudo reúne utilidades locales y ligeras para Windows en una aplicación de ban
 [![CodeQL](https://github.com/adrielcrv/raudo-windows/actions/workflows/codeql.yml/badge.svg)](https://github.com/adrielcrv/raudo-windows/actions/workflows/codeql.yml)
 
 <p align="center">
-  <img src="docs/raudo-dark.png" width="540" alt="Interfaz de Raudo en modo oscuro">
+  <img src="docs/raudo-dark.png" width="520" alt="Interfaz de Raudo en modo oscuro">
 </p>
 
 ## Funciones
@@ -23,6 +23,18 @@ Raudo reúne utilidades locales y ligeras para Windows en una aplicación de ban
 - Se limita a 15, 30, 60 o 120 minutos.
 - Se detiene al bloquear, suspender o cerrar la sesión interactiva de Windows.
 - No se activa automáticamente al iniciar la aplicación.
+
+### Salto
+
+- Abre un lanzador local con `Ctrl + Alt + Espacio` o desde la bandeja.
+- Busca acciones sin distinguir mayúsculas ni acentos.
+- Permite iniciar o detener Pulso, abrir Recortes y Raudo, controlar Modo Mini y cambiar entre escritorios disponibles.
+- Se opera con flechas, `Enter`, `Escape` o un clic.
+- Se crea únicamente al primer uso y no mantiene historial, indexación, scripts ni procesos auxiliares.
+
+<p align="center">
+  <img src="docs/raudo-salto-dark.png" width="640" alt="Salto de Raudo en modo oscuro">
+</p>
 
 ### Recortar pantalla
 
@@ -51,7 +63,7 @@ La detección de ventanas utiliza la interfaz pública `IVirtualDesktopManager`.
 
 ## Privacidad y red
 
-Raudo no incluye telemetría, cuentas ni publicidad. Sólo se conecta a Internet cuando el usuario selecciona **Buscar actualizaciones**. En una instalación local, puede descargar el paquete oficial después de una confirmación, validar su versión y sus sumas SHA-256, reemplazar el ejecutable de forma atómica y reiniciarse. Una copia portable abre la publicación para actualización manual.
+Raudo no incluye telemetría, cuentas ni publicidad. Las búsquedas de Salto permanecen en memoria y se utilizan únicamente para filtrar el catálogo local. Raudo sólo se conecta a Internet cuando el usuario selecciona **Buscar actualizaciones**. En una instalación local, puede descargar el paquete oficial después de una confirmación, validar su versión y sus sumas SHA-256, reemplazar el ejecutable de forma atómica y reiniciarse. Una copia portable abre la publicación para actualización manual.
 
 Consulta [PRIVACY.md](PRIVACY.md) para conocer los datos locales y el comportamiento de red.
 
