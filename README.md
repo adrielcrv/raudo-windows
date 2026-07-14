@@ -32,6 +32,10 @@ Raudo reúne utilidades locales y ligeras para Windows en una aplicación de ban
 - Indica si una ventana está en este u otro escritorio y permite enfocarla o traerla.
 - Obtiene las aplicaciones del catálogo de Windows una sola vez por sesión y bajo demanda.
 - Calcula expresiones aritméticas y convierte unidades comunes localmente.
+- Adapta su tamaño al contenido: se recoge para un cálculo o resultado específico y crece hasta cinco filas para una búsqueda amplia.
+- Conserva resultados adicionales mediante rueda, teclado y un indicador de desplazamiento discreto.
+- Puede moverse desde el agarre inferior, volver a centrarse con doble clic y alternar entre tres niveles de opacidad con `Ctrl + Shift + O`.
+- Muestra preparación únicamente mientras Windows entrega por primera vez el catálogo de aplicaciones; los cálculos y filtros locales no esperan ni muestran carga.
 - Abre carpetas conocidas de Windows sólo cuando resuelven a una ubicación local existente.
 - Copia un cálculo o conversión únicamente después de seleccionarlo.
 - Controla reproducción, cambio de pista, silencio y volumen mediante las teclas multimedia de Windows.
@@ -81,7 +85,7 @@ La detección de ventanas utiliza la interfaz pública `IVirtualDesktopManager`.
 
 ## Privacidad y red
 
-Raudo no incluye telemetría, cuentas ni publicidad. Las búsquedas de Salto permanecen en memoria y se utilizan únicamente para filtrar resultados o producir un cálculo o conversión local. El catálogo de aplicaciones se consulta a Windows bajo demanda; Raudo no recorre el disco ni conserva las consultas. Un resultado sólo se escribe en el portapapeles después de seleccionarlo. Los controles multimedia automáticos envían comandos fijos; al abrir el selector de Mini, Raudo consulta localmente las sesiones que Windows expone y conserva de forma transitoria el nombre de la aplicación y su estado. Raudo sólo se conecta a Internet cuando el usuario selecciona **Buscar actualizaciones**. En una instalación local, puede descargar el paquete oficial después de una confirmación, validar su versión y sus sumas SHA-256, reemplazar el ejecutable de forma atómica y reiniciarse. Una copia portable abre la publicación para actualización manual.
+Raudo no incluye telemetría, cuentas ni publicidad. Las búsquedas de Salto permanecen en memoria y se utilizan únicamente para filtrar resultados o producir un cálculo o conversión local; sólo se guardan la posición y el nivel de opacidad elegidos. El catálogo de aplicaciones se consulta a Windows bajo demanda; Raudo no recorre el disco ni conserva las consultas. Un resultado sólo se escribe en el portapapeles después de seleccionarlo. Los controles multimedia automáticos envían comandos fijos; al abrir el selector de Mini, Raudo consulta localmente las sesiones que Windows expone y conserva de forma transitoria el nombre de la aplicación y su estado. Raudo sólo se conecta a Internet cuando el usuario selecciona **Buscar actualizaciones**. En una instalación local, puede descargar el paquete oficial después de una confirmación, validar su versión y sus sumas SHA-256, reemplazar el ejecutable de forma atómica y reiniciarse. Una copia portable abre la publicación para actualización manual.
 
 Consulta [PRIVACY.md](PRIVACY.md) para conocer los datos locales y el comportamiento de red.
 

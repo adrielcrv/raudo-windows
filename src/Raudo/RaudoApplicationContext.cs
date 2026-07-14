@@ -786,9 +786,28 @@ namespace Raudo
         {
             if (saltoForm == null || saltoForm.IsDisposed)
             {
-                saltoForm = new SaltoForm(actionCatalog);
+                saltoForm = new SaltoForm(actionCatalog, settings);
+                saltoForm.PositionChangedByUser += SaltoPositionChangedByUser;
+                saltoForm.OpacityChangedByUser += SaltoOpacityChangedByUser;
                 saltoForm.ApplyTheme(ThemeService.Current());
             }
+        }
+
+        private void SaltoPositionChangedByUser(
+            object sender,
+            SaltoPositionChangedEventArgs eventArgs)
+        {
+            settings.SaltoCenterX = eventArgs.Anchor.X;
+            settings.SaltoTopY = eventArgs.Anchor.Y;
+            SaveSettings();
+        }
+
+        private void SaltoOpacityChangedByUser(
+            object sender,
+            SaltoOpacityChangedEventArgs eventArgs)
+        {
+            settings.SaltoOpacityPercent = eventArgs.OpacityPercent;
+            SaveSettings();
         }
 
         private void InstalledApplicationsLoadCompleted(object sender, EventArgs eventArgs)
@@ -1029,6 +1048,8 @@ namespace Raudo
             keepActiveService.Dispose();
             if (saltoForm != null)
             {
+                saltoForm.PositionChangedByUser -= SaltoPositionChangedByUser;
+                saltoForm.OpacityChangedByUser -= SaltoOpacityChangedByUser;
                 saltoForm.AllowCloseAndClose();
                 saltoForm.Dispose();
                 saltoForm = null;

@@ -20,9 +20,13 @@ conocidas locales y acciones de Raudo. También calcula expresiones aritméticas
 convierte unidades comunes sin conexión. Una ventana abierta aparece antes que
 la opción de iniciar otra instancia y puede enfocarse o traerse desde otro
 escritorio. El catálogo de aplicaciones se prepara una vez por sesión y bajo
-demanda. Raudo no recorre el disco ni conserva las consultas. Un resultado sólo
-se copia después de seleccionarlo. Si Ctrl + Alt + Espacio ya pertenece a otra
-aplicación, Salto permanece disponible desde la bandeja.
+demanda. Salto reduce su tamaño para cálculos y resultados específicos, crece
+hasta cinco filas para búsquedas amplias y mantiene el resto mediante rueda o
+teclado. Puede moverse desde el agarre inferior y alternar tres niveles de
+opacidad con Ctrl + Shift + O. Raudo no recorre el disco ni conserva las
+consultas. Un resultado sólo se copia después de seleccionarlo. Si Ctrl + Alt +
+Espacio ya pertenece a otra aplicación, Salto permanece disponible desde la
+bandeja.
 
 MULTIMEDIA
 

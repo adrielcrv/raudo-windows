@@ -7,42 +7,120 @@ using System.Windows.Forms;
 
 namespace Raudo
 {
+    internal enum SaltoPresentationMode
+    {
+        Ready,
+        Answer,
+        Results,
+        Loading,
+        Empty
+    }
+
+    internal sealed class SaltoPositionChangedEventArgs : EventArgs
+    {
+        public SaltoPositionChangedEventArgs(Point anchor)
+        {
+            Anchor = anchor;
+        }
+
+        public Point Anchor { get; private set; }
+    }
+
+    internal sealed class SaltoOpacityChangedEventArgs : EventArgs
+    {
+        public SaltoOpacityChangedEventArgs(int opacityPercent)
+        {
+            OpacityPercent = opacityPercent;
+        }
+
+        public int OpacityPercent { get; private set; }
+    }
+
     internal sealed class SaltoForm : Form
     {
         private const int OpeningDurationMilliseconds = 140;
+        private const int PresentationDurationMilliseconds = 167;
+        private const int LoadingIntervalMilliseconds = 333;
         private readonly RaudoActionCatalog catalog;
+        private readonly RaudoSettings settings;
+        private readonly Func<bool> animationsEnabled;
         private readonly RoundedPanel searchSurface;
         private readonly SaltoSearchGlyph searchGlyph;
         private readonly TextBox searchBox;
+        private readonly SaltoOpacityButton opacityButton;
         private readonly Label escapeLabel;
         private readonly Label sectionLabel;
         private readonly SaltoResultList resultList;
+        private readonly SaltoScrollIndicator scrollIndicator;
         private readonly Label emptyLabel;
         private readonly Panel footerDivider;
         private readonly Label localLabel;
+        private readonly SaltoDragHandle dragHandle;
         private readonly Label keyboardHintLabel;
+        private readonly ToolTip toolTip;
         private readonly Timer openingTimer;
         private readonly Stopwatch openingWatch;
+        private readonly Timer presentationTimer;
+        private readonly Stopwatch presentationWatch;
+        private readonly Timer loadingTimer;
 
         private ThemePalette palette;
         private bool allowClose;
         private bool applicationsLoading;
         private string applicationCatalogError;
         private string executionError;
+        private Rectangle presentationStartBounds;
+        private Rectangle presentationTargetBounds;
+        private SaltoPresentationMode presentationMode;
+        private int visibleResultRows;
+        private int logicalPresentationWidth = 640;
+        private int logicalPresentationHeight = 378;
+        private float layoutScale = 1F;
+        private int loadingFrame;
+        private Point dragStartCursor;
+        private Point dragStartLocation;
+        private bool dragging;
+        private bool applyingAdaptiveLayout;
+        private bool adaptiveControlsReady;
+        private bool suppressLayoutScaleRefresh;
+
+        public event EventHandler<SaltoPositionChangedEventArgs> PositionChangedByUser;
+        public event EventHandler<SaltoOpacityChangedEventArgs> OpacityChangedByUser;
 
         public SaltoForm(RaudoActionCatalog actionCatalog)
+            : this(actionCatalog, new RaudoSettings(), null)
+        {
+        }
+
+        public SaltoForm(RaudoActionCatalog actionCatalog, RaudoSettings currentSettings)
+            : this(actionCatalog, currentSettings, null)
+        {
+        }
+
+        internal SaltoForm(
+            RaudoActionCatalog actionCatalog,
+            RaudoSettings currentSettings,
+            Func<bool> motionSetting)
         {
             if (actionCatalog == null)
             {
                 throw new ArgumentNullException("actionCatalog");
             }
 
+            if (currentSettings == null)
+            {
+                throw new ArgumentNullException("currentSettings");
+            }
+
             catalog = actionCatalog;
+            settings = currentSettings;
+            animationsEnabled = motionSetting ?? MotionSettings.ClientAreaAnimationsEnabled;
+            settings.Normalize();
             Text = "Salto · Raudo";
             AccessibleName = "Salto de Raudo";
             AccessibleDescription =
                 "Busca ventanas, aplicaciones y carpetas, o calcula localmente";
-            ClientSize = new Size(640, 432);
+            ClientSize = new Size(640, 378);
             FormBorderStyle = FormBorderStyle.None;
             ShowInTaskbar = false;
             StartPosition = FormStartPosition.Manual;
@@ -70,7 +148,7 @@ namespace Raudo
                 FontStyle.Regular,
                 GraphicsUnit.Point);
             searchBox.Location = new Point(52, 17);
-            searchBox.Size = new Size(466, 24);
+            searchBox.Size = new Size(430, 24);
             searchBox.TabIndex = 0;
             searchBox.AccessibleName = "Buscar en Salto";
             searchBox.AccessibleDescription =
@@ -78,6 +156,14 @@ namespace Raudo
             searchBox.TextChanged += SearchBoxTextChanged;
             searchBox.HandleCreated += delegate { ApplySearchCue(); };
             searchSurface.Controls.Add(searchBox);
+
+            opacityButton = new SaltoOpacityButton();
+            opacityButton.Location = new Point(506, 12);
+            opacityButton.Size = new Size(36, 32);
+            opacityButton.TabIndex = 2;
+            opacityButton.AccessibleName = "Opacidad de Salto";
+            opacityButton.Click += delegate { CycleOpacity(); };
+            searchSurface.Controls.Add(opacityButton);
 
             escapeLabel = CreateLabel(
                 "Esc",
@@ -103,8 +189,19 @@ namespace Raudo
             resultList.AccessibleName = "Resultados de Salto";
             resultList.MouseClick += ResultListMouseClick;
             resultList.KeyDown += ResultListKeyDown;
-            resultList.SelectedIndexChanged += delegate { UpdateKeyboardHint(); };
+            resultList.SelectedIndexChanged += delegate
+            {
+                UpdateKeyboardHint();
+                UpdateScrollIndicator();
+            };
+            resultList.ViewportChanged += delegate { UpdateScrollIndicator(); };
             Controls.Add(resultList);
+
+            scrollIndicator = new SaltoScrollIndicator();
+            scrollIndicator.Location = new Point(619, 112);
+            scrollIndicator.Size = new Size(3, 260);
+            scrollIndicator.TabStop = false;
+            Controls.Add(scrollIndicator);
 
             emptyLabel = CreateLabel(
                 "No hay resultados que coincidan",
@@ -117,7 +214,7 @@ namespace Raudo
             Controls.Add(emptyLabel);
 
             footerDivider = new Panel();
-            footerDivider.Location = new Point(16, 390);
+            footerDivider.Location = new Point(16, 336);
             footerDivider.Size = new Size(608, 1);
             Controls.Add(footerDivider);
 
@@ -125,16 +222,29 @@ namespace Raudo
                 "●  Raudo se ejecuta localmente",
                 8F,
                 FontStyle.Regular,
-                new Point(21, 400),
-                new Size(260, 22));
+                new Point(21, 346),
+                new Size(220, 22));
             Controls.Add(localLabel);
+
+            dragHandle = new SaltoDragHandle();
+            dragHandle.Location = new Point(284, 346);
+            dragHandle.Size = new Size(72, 22);
+            dragHandle.TabStop = false;
+            dragHandle.AccessibleName = "Mover Salto";
+            dragHandle.AccessibleDescription =
+                "Arrastra para mover. Haz doble clic para centrar en esta pantalla.";
+            dragHandle.MouseDown += DragHandleMouseDown;
+            dragHandle.MouseMove += DragHandleMouseMove;
+            dragHandle.MouseUp += DragHandleMouseUp;
+            dragHandle.DoubleClick += delegate { CenterOnForegroundScreen(true); };
+            Controls.Add(dragHandle);
 
             keyboardHintLabel = CreateLabel(
                 "↑↓  mover     Enter  abrir",
                 8F,
                 FontStyle.Regular,
-                new Point(378, 400),
-                new Size(242, 22));
+                new Point(368, 346),
+                new Size(252, 22));
             keyboardHintLabel.TextAlign = ContentAlignment.MiddleRight;
             Controls.Add(keyboardHintLabel);
 
@@ -143,9 +253,29 @@ namespace Raudo
             openingTimer.Tick += OpeningTimerTick;
             openingWatch = new Stopwatch();
 
+            presentationTimer = new Timer();
+            presentationTimer.Interval = 15;
+            presentationTimer.Tick += PresentationTimerTick;
+            presentationWatch = new Stopwatch();
+
+            loadingTimer = new Timer();
+            loadingTimer.Interval = LoadingIntervalMilliseconds;
+            loadingTimer.Tick += LoadingTimerTick;
+
+            toolTip = new ToolTip();
+            toolTip.AutoPopDelay = 6000;
+            toolTip.InitialDelay = 450;
+            toolTip.ReshowDelay = 100;
+            toolTip.SetToolTip(opacityButton, "Cambiar opacidad · Ctrl + Shift + O");
+            toolTip.SetToolTip(dragHandle, "Arrastra para mover · doble clic para centrar");
+
             Deactivate += delegate { HideSalto(); };
             VisibleChanged += SaltoVisibleChanged;
+            presentationMode = SaltoPresentationMode.Ready;
+            visibleResultRows = 4;
             ApplyTheme(ThemeService.Current());
+            adaptiveControlsReady = true;
+            ApplyAdaptiveLayout();
         }
 
         public void ApplyTheme(ThemePalette currentPalette)
@@ -169,7 +299,14 @@ namespace Raudo
                 : palette.Danger;
             keyboardHintLabel.ForeColor = palette.TextFaint;
             searchGlyph.ApplyTheme(palette);
+            opacityButton.ApplyTheme(palette);
             resultList.ApplyTheme(palette);
+            scrollIndicator.ApplyTheme(palette);
+            dragHandle.ApplyTheme(palette);
+            opacityButton.Enabled = !palette.IsHighContrast;
+            opacityButton.Visible = !palette.IsHighContrast;
+            ApplyEffectiveOpacity();
+            ApplyAdaptiveLayout();
             ApplySearchCue();
             Invalidate();
 
@@ -199,8 +336,8 @@ namespace Raudo
             RefreshResults();
             PositionOnForegroundScreen();
 
-            bool animate = MotionSettings.ClientAreaAnimationsEnabled();
-            Opacity = animate ? 0D : 1D;
+            bool animate = AnimationsEnabled();
+            Opacity = animate ? 0D : GetEffectiveOpacity();
             if (!Visible)
             {
                 Show();
@@ -222,7 +359,10 @@ namespace Raudo
         {
             openingTimer.Stop();
             openingWatch.Reset();
-            Opacity = 1D;
+            presentationTimer.Stop();
+            presentationWatch.Reset();
+            loadingTimer.Stop();
+            Opacity = GetEffectiveOpacity();
             if (Visible)
             {
                 Hide();
@@ -241,6 +381,8 @@ namespace Raudo
         {
             allowClose = true;
             openingTimer.Stop();
+            presentationTimer.Stop();
+            loadingTimer.Stop();
             Close();
         }
 
@@ -248,6 +390,7 @@ namespace Raudo
         {
             applicationsLoading = loading;
             applicationCatalogError = error;
+            UpdateLoadingPresentation();
             if (Visible)
             {
                 RefreshResults();
@@ -276,7 +419,52 @@ namespace Raudo
 
         internal bool TransitionRunningForTesting
         {
-            get { return openingTimer.Enabled; }
+            get { return openingTimer.Enabled || presentationTimer.Enabled; }
+        }
+
+        internal SaltoPresentationMode PresentationModeForTesting
+        {
+            get { return presentationMode; }
+        }
+
+        internal int VisibleRowsForTesting
+        {
+            get { return visibleResultRows; }
+        }
+
+        internal int OpacityPercentForTesting
+        {
+            get { return settings.SaltoOpacityPercent; }
+        }
+
+        internal double EffectiveOpacityForTesting
+        {
+            get { return GetEffectiveOpacity(); }
+        }
+
+        internal bool LoadingAnimationRunningForTesting
+        {
+            get { return loadingTimer.Enabled; }
+        }
+
+        internal bool ScrollIndicatorVisibleForTesting
+        {
+            get { return resultList.Items.Count > visibleResultRows; }
+        }
+
+        internal string LoadingTextForTesting
+        {
+            get { return emptyLabel.Text; }
+        }
+
+        internal Rectangle PresentationStartBoundsForTesting
+        {
+            get { return presentationStartBounds; }
+        }
+
+        internal Rectangle PresentationTargetBoundsForTesting
+        {
+            get { return presentationTargetBounds; }
         }
 
         internal string KeyboardHintForTesting
@@ -286,8 +474,15 @@ namespace Raudo
 
         internal void SetQueryForTesting(string query)
         {
-            searchBox.Text = query ?? string.Empty;
-            RefreshResults();
+            string value = query ?? string.Empty;
+            if (!string.Equals(searchBox.Text, value, StringComparison.Ordinal))
+            {
+                searchBox.Text = value;
+            }
+            else
+            {
+                RefreshResults();
+            }
         }
 
         internal void MoveSelectionForTesting(int direction)
@@ -298,6 +493,42 @@ namespace Raudo
         internal void ExecuteSelectedForTesting()
         {
             ExecuteSelected();
+        }
+
+        internal void CycleOpacityForTesting()
+        {
+            CycleOpacity();
+        }
+
+        internal void CenterForTesting()
+        {
+            CenterOnForegroundScreen(false);
+        }
+
+        internal void MoveForTesting(Point location)
+        {
+            Location = ClampWindowBounds(new Rectangle(location, Size)).Location;
+            NotifyPositionChanged();
+        }
+
+        internal void ApplyPresentationProgressForTesting(double progress)
+        {
+            presentationTimer.Stop();
+            presentationWatch.Stop();
+            double bounded = Math.Max(0D, Math.Min(1D, progress));
+            double eased = 1D - Math.Pow(1D - bounded, 3D);
+            suppressLayoutScaleRefresh = true;
+            try
+            {
+                Bounds = InterpolateBounds(
+                    presentationStartBounds,
+                    presentationTargetBounds,
+                    eased);
+            }
+            finally
+            {
+                suppressLayoutScaleRefresh = false;
+            }
         }
 
         protected override CreateParams CreateParams
@@ -320,6 +551,11 @@ namespace Raudo
         protected override void OnResize(EventArgs eventArgs)
         {
             base.OnResize(eventArgs);
+            if (adaptiveControlsReady)
+            {
+                ApplyAdaptiveLayout();
+            }
+
             if (Width > 1 && Height > 1)
             {
                 int radius = Math.Max(18, (int)Math.Round(18D * DeviceDpi / 96D));
@@ -353,6 +589,14 @@ namespace Raudo
         protected override bool ProcessCmdKey(ref Message message, Keys keyData)
         {
             Keys key = keyData & Keys.KeyCode;
+            Keys modifiers = keyData & Keys.Modifiers;
+            if (key == Keys.O
+                && modifiers == (Keys.Control | Keys.Shift))
+            {
+                CycleOpacity();
+                return true;
+            }
+
             if (key == Keys.Escape)
             {
                 HideSalto();
@@ -397,6 +641,9 @@ namespace Raudo
             if (disposing)
             {
                 openingTimer.Dispose();
+                presentationTimer.Dispose();
+                loadingTimer.Dispose();
+                toolTip.Dispose();
             }
 
             base.Dispose(disposing);
@@ -496,6 +743,10 @@ namespace Raudo
             }
 
             UpdateKeyboardHint();
+            resultList.HideNativeScrollBar();
+            UpdatePresentation(queryEmpty);
+            UpdateScrollIndicator();
+            UpdateLoadingPresentation();
         }
 
         private void UpdateKeyboardHint()
@@ -591,7 +842,7 @@ namespace Raudo
             searchBox.Text = query ?? string.Empty;
             RefreshResults();
             PositionOnForegroundScreen();
-            Opacity = 1D;
+            Opacity = GetEffectiveOpacity();
             if (!Visible)
             {
                 Show();
@@ -608,11 +859,7 @@ namespace Raudo
         private void ResetFooterStatus()
         {
             executionError = null;
-            localLabel.Text = "●  Raudo se ejecuta localmente";
-            if (palette != null)
-            {
-                localLabel.ForeColor = palette.TextMuted;
-            }
+            UpdateFooterText();
         }
 
         private void ResultListKeyDown(object sender, KeyEventArgs eventArgs)
@@ -644,17 +891,621 @@ namespace Raudo
             }
         }
 
+        protected override void OnLayout(LayoutEventArgs eventArgs)
+        {
+            base.OnLayout(eventArgs);
+            if (!applyingAdaptiveLayout && adaptiveControlsReady)
+            {
+                ApplyAdaptiveLayout();
+            }
+        }
+
+        private void UpdatePresentation(bool queryEmpty)
+        {
+            int resultCount = resultList.Items.Count;
+            int logicalWidth;
+            int rows;
+            RaudoAction first = resultCount == 0
+                ? null
+                : resultList.Items[0] as RaudoAction;
+
+            if (queryEmpty)
+            {
+                presentationMode = SaltoPresentationMode.Ready;
+                logicalWidth = 640;
+                rows = Math.Max(1, Math.Min(4, resultCount));
+                sectionLabel.Text = "ACCIONES";
+            }
+            else if (resultCount == 0 && IsArithmeticIntent(searchBox.Text))
+            {
+                presentationMode = SaltoPresentationMode.Answer;
+                logicalWidth = 520;
+                rows = 1;
+                sectionLabel.Text = "CÁLCULO";
+                emptyLabel.Text = "Continúa escribiendo la operación";
+            }
+            else if (resultCount == 0)
+            {
+                presentationMode = applicationsLoading
+                    ? SaltoPresentationMode.Loading
+                    : SaltoPresentationMode.Empty;
+                logicalWidth = 560;
+                rows = 1;
+                sectionLabel.Text = applicationsLoading ? "PREPARANDO" : "SIN RESULTADOS";
+            }
+            else if (first != null
+                && (first.Kind == RaudoActionKind.Calculation
+                    || first.Kind == RaudoActionKind.Conversion))
+            {
+                presentationMode = SaltoPresentationMode.Answer;
+                logicalWidth = 520;
+                rows = 1;
+                sectionLabel.Text = "RESULTADO";
+            }
+            else
+            {
+                presentationMode = SaltoPresentationMode.Results;
+                logicalWidth = 640;
+                rows = Math.Max(1, Math.Min(5, resultCount));
+                sectionLabel.Text = resultCount == 1 ? "RESULTADO" : "RESULTADOS";
+            }
+
+            visibleResultRows = rows;
+            int logicalHeight = 162 + (54 * rows);
+            TransitionToPresentation(logicalWidth, logicalHeight);
+        }
+
+        private static bool IsArithmeticIntent(string query)
+        {
+            if (string.IsNullOrWhiteSpace(query) || query.Length > 128)
+            {
+                return false;
+            }
+
+            bool hasDigit = false;
+            for (int index = 0; index < query.Length; index++)
+            {
+                char character = query[index];
+                if (char.IsDigit(character))
+                {
+                    hasDigit = true;
+                    continue;
+                }
+
+                if (char.IsWhiteSpace(character)
+                    || character == '.'
+                    || character == ','
+                    || character == '+'
+                    || character == '-'
+                    || character == '*'
+                    || character == '/'
+                    || character == '%'
+                    || character == '('
+                    || character == ')')
+                {
+                    continue;
+                }
+
+                return false;
+            }
+
+            return hasDigit;
+        }
+
+        private void TransitionToPresentation(int logicalWidth, int logicalHeight)
+        {
+            RefreshLayoutScaleFromBounds();
+            float scale = GetLayoutScale();
+            logicalPresentationWidth = logicalWidth;
+            logicalPresentationHeight = logicalHeight;
+            Size targetSize = new Size(
+                Math.Max(1, (int)Math.Round(logicalWidth * scale)),
+                Math.Max(1, (int)Math.Round(logicalHeight * scale)));
+
+            if (!Visible)
+            {
+                presentationTimer.Stop();
+                presentationWatch.Reset();
+                ClientSize = targetSize;
+                ApplyAdaptiveLayout();
+                return;
+            }
+
+            int centerX = Left + (Width / 2);
+            Rectangle target = ClampWindowBounds(
+                new Rectangle(
+                    centerX - (targetSize.Width / 2),
+                    Top,
+                    targetSize.Width,
+                    targetSize.Height));
+            if (Bounds == target)
+            {
+                presentationTimer.Stop();
+                presentationWatch.Reset();
+                ApplyAdaptiveLayout();
+                return;
+            }
+
+            if (!AnimationsEnabled())
+            {
+                presentationTimer.Stop();
+                presentationWatch.Reset();
+                Bounds = target;
+                ApplyAdaptiveLayout();
+                return;
+            }
+
+            presentationTimer.Stop();
+            presentationStartBounds = Bounds;
+            presentationTargetBounds = target;
+            presentationWatch.Restart();
+            presentationTimer.Start();
+        }
+
+        private void PresentationTimerTick(object sender, EventArgs eventArgs)
+        {
+            double progress = Math.Min(
+                1D,
+                presentationWatch.Elapsed.TotalMilliseconds
+                    / PresentationDurationMilliseconds);
+            double eased = 1D - Math.Pow(1D - progress, 3D);
+            Bounds = InterpolateBounds(
+                presentationStartBounds,
+                presentationTargetBounds,
+                eased);
+
+            if (progress >= 1D)
+            {
+                presentationTimer.Stop();
+                presentationWatch.Stop();
+                Bounds = presentationTargetBounds;
+            }
+        }
+
+        private static Rectangle InterpolateBounds(
+            Rectangle start,
+            Rectangle target,
+            double progress)
+        {
+            return new Rectangle(
+                Interpolate(start.X, target.X, progress),
+                Interpolate(start.Y, target.Y, progress),
+                Interpolate(start.Width, target.Width, progress),
+                Interpolate(start.Height, target.Height, progress));
+        }
+
+        private static int Interpolate(int start, int target, double progress)
+        {
+            return (int)Math.Round(start + ((target - start) * progress));
+        }
+
+        private void ApplyAdaptiveLayout()
+        {
+            if (applyingAdaptiveLayout
+                || !adaptiveControlsReady
+                || ClientSize.Width <= 1
+                || ClientSize.Height <= 1)
+            {
+                return;
+            }
+
+            applyingAdaptiveLayout = true;
+            try
+            {
+            RefreshLayoutScaleFromBounds();
+            float scale = GetLayoutScale();
+            int margin = ScaleLogical(16, scale);
+            int searchHeight = ScaleLogical(56, scale);
+            int searchWidth = Math.Max(ScaleLogical(300, scale), ClientSize.Width - (margin * 2));
+            searchSurface.SetBounds(margin, margin, searchWidth, searchHeight);
+
+            searchGlyph.SetBounds(
+                ScaleLogical(17, scale),
+                ScaleLogical(16, scale),
+                ScaleLogical(24, scale),
+                ScaleLogical(24, scale));
+            int escapeWidth = ScaleLogical(42, scale);
+            int escapeLeft = searchWidth - ScaleLogical(60, scale);
+            escapeLabel.SetBounds(
+                escapeLeft,
+                ScaleLogical(16, scale),
+                escapeWidth,
+                ScaleLogical(24, scale));
+            int opacityWidth = ScaleLogical(36, scale);
+            int opacityLeft = escapeLeft - ScaleLogical(42, scale);
+            opacityButton.SetBounds(
+                opacityLeft,
+                ScaleLogical(12, scale),
+                opacityWidth,
+                ScaleLogical(32, scale));
+            int searchLeft = ScaleLogical(52, scale);
+            int searchRight = opacityButton.Visible ? opacityLeft : escapeLeft;
+            searchBox.SetBounds(
+                searchLeft,
+                ScaleLogical(17, scale),
+                Math.Max(ScaleLogical(120, scale), searchRight - searchLeft - ScaleLogical(12, scale)),
+                ScaleLogical(24, scale));
+
+            int sectionTop = ScaleLogical(84, scale);
+            sectionLabel.SetBounds(
+                ScaleLogical(20, scale),
+                sectionTop,
+                ClientSize.Width - ScaleLogical(40, scale),
+                ScaleLogical(20, scale));
+
+            int footerTop = ClientSize.Height - ScaleLogical(42, scale);
+            int resultTop = ScaleLogical(106, scale);
+            int resultHeight = Math.Max(
+                ScaleLogical(56, scale),
+                footerTop - resultTop - ScaleLogical(12, scale));
+            int listLeft = margin;
+            int indicatorWidth = Math.Max(3, ScaleLogical(3, scale));
+            int indicatorLeft = ClientSize.Width - margin - indicatorWidth - ScaleLogical(2, scale);
+            int listWidth = Math.Max(
+                ScaleLogical(240, scale),
+                indicatorLeft - listLeft - ScaleLogical(5, scale));
+            resultList.SetBounds(listLeft, resultTop, listWidth, resultHeight);
+            resultList.ItemHeight = ScaleLogical(54, scale);
+            resultList.HideNativeScrollBar();
+            scrollIndicator.SetBounds(
+                indicatorLeft,
+                resultTop + ScaleLogical(6, scale),
+                indicatorWidth,
+                Math.Max(1, resultHeight - ScaleLogical(12, scale)));
+            emptyLabel.SetBounds(
+                ScaleLogical(20, scale),
+                resultTop,
+                ClientSize.Width - ScaleLogical(40, scale),
+                resultHeight);
+
+            footerDivider.SetBounds(
+                margin,
+                footerTop,
+                ClientSize.Width - (margin * 2),
+                Math.Max(1, ScaleLogical(1, scale)));
+            int footerContentTop = footerTop + ScaleLogical(10, scale);
+            int handleWidth = ScaleLogical(72, scale);
+            int handleLeft = (ClientSize.Width - handleWidth) / 2;
+            dragHandle.SetBounds(
+                handleLeft,
+                footerContentTop,
+                handleWidth,
+                ScaleLogical(22, scale));
+            localLabel.SetBounds(
+                ScaleLogical(21, scale),
+                footerContentTop,
+                Math.Max(1, handleLeft - ScaleLogical(33, scale)),
+                ScaleLogical(22, scale));
+            int hintLeft = handleLeft + handleWidth + ScaleLogical(12, scale);
+            keyboardHintLabel.SetBounds(
+                hintLeft,
+                footerContentTop,
+                Math.Max(1, ClientSize.Width - hintLeft - ScaleLogical(20, scale)),
+                ScaleLogical(22, scale));
+
+            UpdateFooterText();
+            UpdateScrollIndicator();
+            scrollIndicator.BringToFront();
+            }
+            finally
+            {
+                applyingAdaptiveLayout = false;
+            }
+        }
+
+        private float GetLayoutScale()
+        {
+            return Math.Max(0.75F, Math.Min(4F, layoutScale));
+        }
+
+        private void RefreshLayoutScaleFromBounds()
+        {
+            if (presentationTimer != null && presentationTimer.Enabled)
+            {
+                return;
+            }
+
+            if (suppressLayoutScaleRefresh)
+            {
+                return;
+            }
+
+            if (logicalPresentationWidth <= 0 || logicalPresentationHeight <= 0)
+            {
+                return;
+            }
+
+            float widthScale = ClientSize.Width / (float)logicalPresentationWidth;
+            float heightScale = ClientSize.Height / (float)logicalPresentationHeight;
+            float candidate = Math.Min(widthScale, heightScale);
+            if (candidate >= 0.75F && candidate <= 4F)
+            {
+                layoutScale = candidate;
+            }
+        }
+
+        private static int ScaleLogical(int value, float scale)
+        {
+            return Math.Max(1, (int)Math.Round(value * scale));
+        }
+
+        private void UpdateScrollIndicator()
+        {
+            if (scrollIndicator == null || resultList == null)
+            {
+                return;
+            }
+
+            scrollIndicator.SetState(
+                resultList.Items.Count,
+                Math.Max(1, visibleResultRows),
+                resultList.Items.Count == 0 ? 0 : resultList.TopIndex);
+        }
+
+        private void UpdateLoadingPresentation()
+        {
+            if (loadingTimer == null)
+            {
+                return;
+            }
+
+            bool animate = Visible
+                && applicationsLoading
+                && presentationMode != SaltoPresentationMode.Answer
+                && AnimationsEnabled();
+            if (animate)
+            {
+                if (!loadingTimer.Enabled)
+                {
+                    loadingFrame = 0;
+                    loadingTimer.Start();
+                }
+            }
+            else
+            {
+                loadingTimer.Stop();
+                loadingFrame = 2;
+            }
+
+            UpdateFooterText();
+            if (presentationMode == SaltoPresentationMode.Loading)
+            {
+                emptyLabel.Text = LoadingText();
+            }
+        }
+
+        private void LoadingTimerTick(object sender, EventArgs eventArgs)
+        {
+            loadingFrame = (loadingFrame + 1) % 3;
+            UpdateFooterText();
+            if (presentationMode == SaltoPresentationMode.Loading)
+            {
+                emptyLabel.Text = LoadingText();
+            }
+        }
+
+        private string LoadingText()
+        {
+            if (!AnimationsEnabled())
+            {
+                return "Preparando aplicaciones…";
+            }
+
+            return "Preparando aplicaciones" + new string('·', loadingFrame + 1);
+        }
+
+        private void UpdateFooterText()
+        {
+            if (localLabel == null || palette == null)
+            {
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(executionError))
+            {
+                localLabel.Text = "●  " + executionError;
+                localLabel.ForeColor = palette.Danger;
+            }
+            else if (applicationsLoading
+                && presentationMode != SaltoPresentationMode.Answer
+                && presentationMode != SaltoPresentationMode.Loading)
+            {
+                localLabel.Text = "●  " + LoadingText();
+                localLabel.ForeColor = palette.TextMuted;
+            }
+            else
+            {
+                localLabel.Text = ClientSize.Width < ScaleLogical(600, GetLayoutScale())
+                    ? "●  Local"
+                    : "●  Raudo se ejecuta localmente";
+                localLabel.ForeColor = palette.TextMuted;
+            }
+        }
+
+        private void CycleOpacity()
+        {
+            if (palette != null && palette.IsHighContrast)
+            {
+                return;
+            }
+
+            if (settings.SaltoOpacityPercent >= 100)
+            {
+                settings.SaltoOpacityPercent = 82;
+            }
+            else if (settings.SaltoOpacityPercent >= 82)
+            {
+                settings.SaltoOpacityPercent = 64;
+            }
+            else
+            {
+                settings.SaltoOpacityPercent = 100;
+            }
+
+            ApplyEffectiveOpacity();
+            EventHandler<SaltoOpacityChangedEventArgs> handler = OpacityChangedByUser;
+            if (handler != null)
+            {
+                handler(this, new SaltoOpacityChangedEventArgs(settings.SaltoOpacityPercent));
+            }
+        }
+
+        private void ApplyEffectiveOpacity()
+        {
+            if (opacityButton == null)
+            {
+                return;
+            }
+
+            opacityButton.SetOpacityPercent(
+                palette != null && palette.IsHighContrast
+                    ? 100
+                    : settings.SaltoOpacityPercent);
+            if (Visible && !openingTimer.Enabled)
+            {
+                Opacity = GetEffectiveOpacity();
+            }
+        }
+
+        private double GetEffectiveOpacity()
+        {
+            return palette != null && palette.IsHighContrast
+                ? 1D
+                : Math.Max(0.64D, Math.Min(1D, settings.SaltoOpacityPercent / 100D));
+        }
+
+        private bool AnimationsEnabled()
+        {
+            try
+            {
+                return animationsEnabled();
+            }
+            catch (Exception)
+            {
+                return true;
+            }
+        }
+
+        private void DragHandleMouseDown(object sender, MouseEventArgs eventArgs)
+        {
+            if (eventArgs.Button != MouseButtons.Left)
+            {
+                return;
+            }
+
+            presentationTimer.Stop();
+            dragStartCursor = Cursor.Position;
+            dragStartLocation = Location;
+            dragging = false;
+            dragHandle.Capture = true;
+        }
+
+        private void DragHandleMouseMove(object sender, MouseEventArgs eventArgs)
+        {
+            if ((Control.MouseButtons & MouseButtons.Left) != MouseButtons.Left
+                || !dragHandle.Capture)
+            {
+                return;
+            }
+
+            Point cursor = Cursor.Position;
+            int deltaX = cursor.X - dragStartCursor.X;
+            int deltaY = cursor.Y - dragStartCursor.Y;
+            if (!dragging && Math.Abs(deltaX) + Math.Abs(deltaY) < 4)
+            {
+                return;
+            }
+
+            dragging = true;
+            Rectangle requested = new Rectangle(
+                dragStartLocation.X + deltaX,
+                dragStartLocation.Y + deltaY,
+                Width,
+                Height);
+            Location = ClampWindowBounds(requested).Location;
+        }
+
+        private void DragHandleMouseUp(object sender, MouseEventArgs eventArgs)
+        {
+            if (eventArgs.Button != MouseButtons.Left)
+            {
+                return;
+            }
+
+            dragHandle.Capture = false;
+            if (dragging)
+            {
+                NotifyPositionChanged();
+            }
+
+            dragging = false;
+        }
+
+        private void NotifyPositionChanged()
+        {
+            Point anchor = new Point(Left + (Width / 2), Top);
+            settings.SaltoCenterX = anchor.X;
+            settings.SaltoTopY = anchor.Y;
+            EventHandler<SaltoPositionChangedEventArgs> handler = PositionChangedByUser;
+            if (handler != null)
+            {
+                handler(this, new SaltoPositionChangedEventArgs(anchor));
+            }
+        }
+
+        private void CenterOnForegroundScreen(bool notify)
+        {
+            Screen screen = GetForegroundScreen();
+            Rectangle area = screen.WorkingArea;
+            int left = area.Left + ((area.Width - Width) / 2);
+            int preferredTop = area.Top + Math.Max(36, (area.Height - Height) / 3);
+            Bounds = ClampWindowBounds(new Rectangle(left, preferredTop, Width, Height), area);
+            if (notify)
+            {
+                NotifyPositionChanged();
+            }
+        }
+
+        private Rectangle ClampWindowBounds(Rectangle requested)
+        {
+            Screen screen = Screen.FromPoint(new Point(
+                requested.Left + (requested.Width / 2),
+                requested.Top + Math.Min(requested.Height / 2, 80)));
+            return ClampWindowBounds(requested, screen.WorkingArea);
+        }
+
+        private static Rectangle ClampWindowBounds(Rectangle requested, Rectangle area)
+        {
+            int margin = 16;
+            int left = Math.Min(
+                Math.Max(area.Left + margin, requested.Left),
+                Math.Max(area.Left + margin, area.Right - requested.Width - margin));
+            int top = Math.Min(
+                Math.Max(area.Top + margin, requested.Top),
+                Math.Max(area.Top + margin, area.Bottom - requested.Height - margin));
+            return new Rectangle(left, top, requested.Width, requested.Height);
+        }
+
+        private static Screen GetForegroundScreen()
+        {
+            IntPtr foreground = NativeMethods.GetForegroundWindow();
+            return foreground == IntPtr.Zero
+                ? Screen.FromPoint(Cursor.Position)
+                : Screen.FromHandle(foreground);
+        }
+
         private void OpeningTimerTick(object sender, EventArgs eventArgs)
         {
             double progress = Math.Min(
                 1D,
                 openingWatch.Elapsed.TotalMilliseconds / OpeningDurationMilliseconds);
-            Opacity = 1D - Math.Pow(1D - progress, 3D);
+            double targetOpacity = GetEffectiveOpacity();
+            Opacity = targetOpacity * (1D - Math.Pow(1D - progress, 3D));
             if (progress >= 1D)
             {
                 openingTimer.Stop();
                 openingWatch.Stop();
-                Opacity = 1D;
+                Opacity = targetOpacity;
             }
         }
 
@@ -664,25 +1515,37 @@ namespace Raudo
             {
                 openingTimer.Stop();
                 openingWatch.Reset();
-                Opacity = 1D;
+                presentationTimer.Stop();
+                presentationWatch.Reset();
+                loadingTimer.Stop();
+                Opacity = GetEffectiveOpacity();
+            }
+            else
+            {
+                UpdateLoadingPresentation();
             }
         }
 
         private void PositionOnForegroundScreen()
         {
-            IntPtr foreground = NativeMethods.GetForegroundWindow();
-            Screen screen = foreground == IntPtr.Zero
-                ? Screen.FromPoint(Cursor.Position)
-                : Screen.FromHandle(foreground);
+            Screen screen = GetForegroundScreen();
             Rectangle area = screen.WorkingArea;
-            int left = area.Left + ((area.Width - Width) / 2);
-            int preferredTop = area.Top + Math.Max(36, (area.Height - Height) / 3);
-            int top = Math.Min(
-                Math.Max(area.Top + 16, preferredTop),
-                area.Bottom - Height - 16);
-            Location = new Point(
-                Math.Min(Math.Max(area.Left + 16, left), area.Right - Width - 16),
-                top);
+            Point savedAnchor = new Point(settings.SaltoCenterX, settings.SaltoTopY);
+            if (settings.SaltoCenterX >= 0
+                && settings.SaltoTopY >= 0
+                && area.Contains(savedAnchor))
+            {
+                Bounds = ClampWindowBounds(
+                    new Rectangle(
+                        savedAnchor.X - (Width / 2),
+                        savedAnchor.Y,
+                        Width,
+                        Height),
+                    area);
+                return;
+            }
+
+            CenterOnForegroundScreen(false);
         }
     }
 
@@ -718,12 +1581,281 @@ namespace Raudo
         }
     }
 
+    internal sealed class SaltoOpacityButton : Control
+    {
+        private ThemePalette palette;
+        private bool hovered;
+        private bool pressed;
+        private int opacityPercent = 100;
+
+        public SaltoOpacityButton()
+        {
+            SetStyle(
+                ControlStyles.AllPaintingInWmPaint
+                    | ControlStyles.OptimizedDoubleBuffer
+                    | ControlStyles.ResizeRedraw
+                    | ControlStyles.SupportsTransparentBackColor
+                    | ControlStyles.UserPaint,
+                true);
+            BackColor = Color.Transparent;
+            Cursor = Cursors.Hand;
+            TabStop = false;
+        }
+
+        public void ApplyTheme(ThemePalette currentPalette)
+        {
+            palette = currentPalette;
+            Invalidate();
+        }
+
+        public void SetOpacityPercent(int percent)
+        {
+            opacityPercent = percent;
+            AccessibleDescription = "Opacidad actual: " + percent + " por ciento";
+            Invalidate();
+        }
+
+        protected override void OnMouseEnter(EventArgs eventArgs)
+        {
+            hovered = true;
+            Invalidate();
+            base.OnMouseEnter(eventArgs);
+        }
+
+        protected override void OnMouseLeave(EventArgs eventArgs)
+        {
+            hovered = false;
+            pressed = false;
+            Invalidate();
+            base.OnMouseLeave(eventArgs);
+        }
+
+        protected override void OnMouseDown(MouseEventArgs eventArgs)
+        {
+            if (eventArgs.Button == MouseButtons.Left)
+            {
+                pressed = true;
+                Invalidate();
+            }
+
+            base.OnMouseDown(eventArgs);
+        }
+
+        protected override void OnMouseUp(MouseEventArgs eventArgs)
+        {
+            pressed = false;
+            Invalidate();
+            base.OnMouseUp(eventArgs);
+        }
+
+        protected override void OnPaint(PaintEventArgs eventArgs)
+        {
+            ThemePalette colors = palette ?? ThemeService.Current();
+            eventArgs.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            if (hovered || pressed)
+            {
+                Color surface = pressed ? colors.Surface : colors.SurfaceRaised;
+                using (GraphicsPath background = DrawingPaths.RoundedRectangle(
+                    new Rectangle(1, 1, Width - 2, Height - 2),
+                    Math.Max(7, Height / 4)))
+                using (SolidBrush fill = new SolidBrush(surface))
+                {
+                    eventArgs.Graphics.FillPath(fill, background);
+                }
+            }
+
+            float scale = Math.Max(0.75F, Math.Min(2F, Height / 32F));
+            RectangleF eye = new RectangleF(
+                (Width - (18F * scale)) / 2F,
+                7F * scale,
+                18F * scale,
+                12F * scale);
+            Color glyph = Enabled ? colors.TextMuted : colors.TextFaint;
+            using (GraphicsPath eyePath = new GraphicsPath())
+            using (Pen pen = new Pen(glyph, Math.Max(1.4F, 1.5F * scale)))
+            using (SolidBrush pupil = new SolidBrush(glyph))
+            {
+                eyePath.AddBezier(
+                    eye.Left,
+                    eye.Top + (eye.Height / 2F),
+                    eye.Left + (eye.Width * 0.28F),
+                    eye.Top - (eye.Height * 0.18F),
+                    eye.Right - (eye.Width * 0.28F),
+                    eye.Top - (eye.Height * 0.18F),
+                    eye.Right,
+                    eye.Top + (eye.Height / 2F));
+                eyePath.AddBezier(
+                    eye.Right,
+                    eye.Top + (eye.Height / 2F),
+                    eye.Right - (eye.Width * 0.28F),
+                    eye.Bottom + (eye.Height * 0.18F),
+                    eye.Left + (eye.Width * 0.28F),
+                    eye.Bottom + (eye.Height * 0.18F),
+                    eye.Left,
+                    eye.Top + (eye.Height / 2F));
+                eyePath.CloseFigure();
+                eventArgs.Graphics.DrawPath(pen, eyePath);
+                float pupilSize = 4F * scale;
+                eventArgs.Graphics.FillEllipse(
+                    pupil,
+                    eye.Left + ((eye.Width - pupilSize) / 2F),
+                    eye.Top + ((eye.Height - pupilSize) / 2F),
+                    pupilSize,
+                    pupilSize);
+            }
+
+            int levelCount = opacityPercent >= 100 ? 3 : opacityPercent >= 82 ? 2 : 1;
+            float levelWidth = 4F * scale;
+            float gap = 2F * scale;
+            float totalWidth = (levelWidth * 3F) + (gap * 2F);
+            float levelLeft = (Width - totalWidth) / 2F;
+            using (SolidBrush levelBrush = new SolidBrush(colors.Primary))
+            using (SolidBrush inactiveBrush = new SolidBrush(colors.Border))
+            {
+                for (int index = 0; index < 3; index++)
+                {
+                    RectangleF level = new RectangleF(
+                        levelLeft + (index * (levelWidth + gap)),
+                        Height - (6F * scale),
+                        levelWidth,
+                        Math.Max(1F, 1.7F * scale));
+                    eventArgs.Graphics.FillRectangle(
+                        index < levelCount ? levelBrush : inactiveBrush,
+                        level);
+                }
+            }
+        }
+    }
+
+    internal sealed class SaltoDragHandle : Control
+    {
+        private ThemePalette palette;
+        private bool hovered;
+
+        public SaltoDragHandle()
+        {
+            SetStyle(
+                ControlStyles.AllPaintingInWmPaint
+                    | ControlStyles.OptimizedDoubleBuffer
+                    | ControlStyles.ResizeRedraw
+                    | ControlStyles.SupportsTransparentBackColor
+                    | ControlStyles.UserPaint,
+                true);
+            BackColor = Color.Transparent;
+            Cursor = Cursors.SizeAll;
+            TabStop = false;
+        }
+
+        public void ApplyTheme(ThemePalette currentPalette)
+        {
+            palette = currentPalette;
+            Invalidate();
+        }
+
+        protected override void OnMouseEnter(EventArgs eventArgs)
+        {
+            hovered = true;
+            Invalidate();
+            base.OnMouseEnter(eventArgs);
+        }
+
+        protected override void OnMouseLeave(EventArgs eventArgs)
+        {
+            hovered = false;
+            Invalidate();
+            base.OnMouseLeave(eventArgs);
+        }
+
+        protected override void OnPaint(PaintEventArgs eventArgs)
+        {
+            ThemePalette colors = palette ?? ThemeService.Current();
+            eventArgs.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            float scale = Math.Max(0.75F, Height / 22F);
+            int width = Math.Max(22, (int)Math.Round(30F * scale));
+            int height = Math.Max(3, (int)Math.Round(3F * scale));
+            Rectangle pill = new Rectangle(
+                (ClientSize.Width - width) / 2,
+                (ClientSize.Height - height) / 2,
+                width,
+                height);
+            using (GraphicsPath path = DrawingPaths.RoundedRectangle(pill, height))
+            using (SolidBrush brush = new SolidBrush(
+                hovered ? colors.TextMuted : colors.TextFaint))
+            {
+                eventArgs.Graphics.FillPath(brush, path);
+            }
+        }
+    }
+
+    internal sealed class SaltoScrollIndicator : Control
+    {
+        private ThemePalette palette;
+        private int itemCount;
+        private int visibleRows;
+        private int topIndex;
+
+        public SaltoScrollIndicator()
+        {
+            SetStyle(
+                ControlStyles.AllPaintingInWmPaint
+                    | ControlStyles.OptimizedDoubleBuffer
+                    | ControlStyles.ResizeRedraw
+                    | ControlStyles.SupportsTransparentBackColor
+                    | ControlStyles.UserPaint,
+                true);
+            BackColor = Color.Transparent;
+            TabStop = false;
+            Visible = false;
+        }
+
+        public void ApplyTheme(ThemePalette currentPalette)
+        {
+            palette = currentPalette;
+            Invalidate();
+        }
+
+        public void SetState(int totalItems, int rows, int firstVisibleIndex)
+        {
+            itemCount = Math.Max(0, totalItems);
+            visibleRows = Math.Max(1, rows);
+            topIndex = Math.Max(0, firstVisibleIndex);
+            Visible = itemCount > visibleRows;
+            Invalidate();
+        }
+
+        protected override void OnPaint(PaintEventArgs eventArgs)
+        {
+            if (itemCount <= visibleRows || Height <= 0)
+            {
+                return;
+            }
+
+            ThemePalette colors = palette ?? ThemeService.Current();
+            eventArgs.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            int thumbHeight = Math.Max(
+                Math.Min(Height, 18),
+                (int)Math.Round(Height * (visibleRows / (double)itemCount)));
+            int range = Math.Max(1, itemCount - visibleRows);
+            int top = (int)Math.Round((Height - thumbHeight) * (topIndex / (double)range));
+            Rectangle thumb = new Rectangle(0, top, Width, thumbHeight);
+            using (GraphicsPath path = DrawingPaths.RoundedRectangle(
+                thumb,
+                Math.Max(1, Width)))
+            using (SolidBrush brush = new SolidBrush(colors.TextFaint))
+            {
+                eventArgs.Graphics.FillPath(brush, path);
+            }
+        }
+    }
+
     internal sealed class SaltoResultList : ListBox
     {
         private readonly Font titleFont;
         private readonly Font descriptionFont;
         private readonly Font shortcutFont;
         private ThemePalette palette;
+
+        public event EventHandler ViewportChanged;
 
         public SaltoResultList()
         {
@@ -754,6 +1886,37 @@ namespace Raudo
             BackColor = palette.Window;
             ForeColor = palette.Text;
             Invalidate();
+        }
+
+        public void HideNativeScrollBar()
+        {
+            if (IsHandleCreated)
+            {
+                NativeMethods.ShowScrollBar(Handle, 1, false);
+            }
+        }
+
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                const int verticalScrollStyle = 0x00200000;
+                CreateParams parameters = base.CreateParams;
+                parameters.Style &= ~verticalScrollStyle;
+                return parameters;
+            }
+        }
+
+        protected override void OnHandleCreated(EventArgs eventArgs)
+        {
+            base.OnHandleCreated(eventArgs);
+            HideNativeScrollBar();
+        }
+
+        protected override void OnSizeChanged(EventArgs eventArgs)
+        {
+            base.OnSizeChanged(eventArgs);
+            HideNativeScrollBar();
         }
 
         protected override void OnDrawItem(DrawItemEventArgs eventArgs)
@@ -871,6 +2034,36 @@ namespace Raudo
             }
 
             base.OnMouseMove(eventArgs);
+        }
+
+        protected override void OnMouseWheel(MouseEventArgs eventArgs)
+        {
+            base.OnMouseWheel(eventArgs);
+            HideNativeScrollBar();
+            NotifyViewportChanged();
+        }
+
+        protected override void OnKeyDown(KeyEventArgs eventArgs)
+        {
+            base.OnKeyDown(eventArgs);
+            HideNativeScrollBar();
+            NotifyViewportChanged();
+        }
+
+        protected override void OnSelectedIndexChanged(EventArgs eventArgs)
+        {
+            base.OnSelectedIndexChanged(eventArgs);
+            HideNativeScrollBar();
+            NotifyViewportChanged();
+        }
+
+        private void NotifyViewportChanged()
+        {
+            EventHandler handler = ViewportChanged;
+            if (handler != null)
+            {
+                handler(this, EventArgs.Empty);
+            }
         }
 
         protected override void Dispose(bool disposing)
