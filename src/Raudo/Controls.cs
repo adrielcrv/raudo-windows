@@ -853,4 +853,44 @@ namespace Raudo
             }
         }
     }
+
+    internal sealed class DesktopWorkspaceGlyph : Control
+    {
+        private ThemePalette palette;
+
+        public DesktopWorkspaceGlyph()
+        {
+            SetStyle(ControlStyles.SupportsTransparentBackColor, true);
+            DoubleBuffered = true;
+            BackColor = Color.Transparent;
+            Size = new Size(44, 44);
+            TabStop = false;
+        }
+
+        public void ApplyTheme(ThemePalette currentPalette)
+        {
+            palette = currentPalette;
+            Invalidate();
+        }
+
+        protected override void OnPaint(PaintEventArgs eventArgs)
+        {
+            ThemePalette colors = palette ?? ThemeService.Current();
+            eventArgs.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            Rectangle background = new Rectangle(0, 0, Width - 1, Height - 1);
+            using (GraphicsPath path = DrawingPaths.RoundedRectangle(background, 11))
+            using (SolidBrush fill = new SolidBrush(colors.SurfaceRaised))
+            using (Pen line = new Pen(colors.Primary, 1.8F))
+            {
+                line.StartCap = LineCap.Round;
+                line.EndCap = LineCap.Round;
+                line.LineJoin = LineJoin.Round;
+                eventArgs.Graphics.FillPath(fill, path);
+                eventArgs.Graphics.DrawRectangle(line, 10, 13, 15, 12);
+                eventArgs.Graphics.DrawRectangle(line, 19, 19, 15, 12);
+                eventArgs.Graphics.DrawLine(line, 12, 29, 17, 29);
+                eventArgs.Graphics.DrawLine(line, 14.5F, 26.5F, 14.5F, 31.5F);
+            }
+        }
+    }
 }

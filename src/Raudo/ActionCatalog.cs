@@ -16,6 +16,8 @@ namespace Raudo
         Mini,
         DesktopLeft,
         DesktopRight,
+        DesktopAdd,
+        DesktopOverview,
         Window,
         Application,
         Calculator,
@@ -407,6 +409,12 @@ namespace Raudo
                         case RaudoActionGlyph.DesktopRight:
                             DrawDesktop(graphics, pen, left, top, scale, true);
                             break;
+                        case RaudoActionGlyph.DesktopAdd:
+                            DrawDesktopAdd(graphics, pen, left, top, scale);
+                            break;
+                        case RaudoActionGlyph.DesktopOverview:
+                            DrawDesktopOverview(graphics, pen, left, top, scale);
+                            break;
                         case RaudoActionGlyph.Window:
                             DrawOpenWindow(graphics, pen, left, top, scale);
                             break;
@@ -611,6 +619,54 @@ namespace Raudo
                 centerY,
                 centerX + (1F * direction * scale),
                 centerY + (3F * scale));
+        }
+
+        private static void DrawDesktopAdd(
+            Graphics graphics,
+            Pen pen,
+            float left,
+            float top,
+            float scale)
+        {
+            graphics.DrawRectangle(
+                pen,
+                left + (3F * scale),
+                top + (5F * scale),
+                18F * scale,
+                13F * scale);
+            graphics.DrawLine(
+                pen,
+                left + (12F * scale),
+                top + (8F * scale),
+                left + (12F * scale),
+                top + (15F * scale));
+            graphics.DrawLine(
+                pen,
+                left + (8.5F * scale),
+                top + (11.5F * scale),
+                left + (15.5F * scale),
+                top + (11.5F * scale));
+        }
+
+        private static void DrawDesktopOverview(
+            Graphics graphics,
+            Pen pen,
+            float left,
+            float top,
+            float scale)
+        {
+            graphics.DrawRectangle(
+                pen,
+                left + (2F * scale),
+                top + (6F * scale),
+                9F * scale,
+                12F * scale);
+            graphics.DrawRectangle(
+                pen,
+                left + (13F * scale),
+                top + (6F * scale),
+                9F * scale,
+                12F * scale);
         }
 
         private static void DrawOpenWindow(

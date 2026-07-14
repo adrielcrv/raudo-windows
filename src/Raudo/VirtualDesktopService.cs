@@ -53,6 +53,8 @@ namespace Raudo
     {
         private const ushort VirtualKeyControl = 0x11;
         private const ushort VirtualKeyLeftWindows = 0x5B;
+        private const ushort VirtualKeyD = 0x44;
+        private const ushort VirtualKeyTab = 0x09;
         private const ushort VirtualKeyLeft = 0x25;
         private const ushort VirtualKeyRight = 0x27;
         private const uint InputKeyboard = 1;
@@ -63,27 +65,55 @@ namespace Raudo
             ushort arrow = direction == DesktopDirection.Left
                 ? VirtualKeyLeft
                 : VirtualKeyRight;
-            NativeMethods.Input[] inputs = new[]
+            return TrySendChord(
+                new[] { VirtualKeyControl, VirtualKeyLeftWindows, arrow },
+                "Windows no pudo cambiar de escritorio.",
+                out error);
+        }
+
+        public static bool TryCreate(out string error)
+        {
+            return TrySendChord(
+                new[] { VirtualKeyLeftWindows, VirtualKeyControl, VirtualKeyD },
+                "Windows no pudo crear un escritorio nuevo.",
+                out error);
+        }
+
+        public static bool TryOpenOverview(out string error)
+        {
+            return TrySendChord(
+                new[] { VirtualKeyLeftWindows, VirtualKeyTab },
+                "Windows no pudo abrir la vista de escritorios.",
+                out error);
+        }
+
+        private static bool TrySendChord(
+            ushort[] keys,
+            string failureMessage,
+            out string error)
+        {
+            List<NativeMethods.Input> inputs = new List<NativeMethods.Input>(keys.Length * 2);
+            for (int index = 0; index < keys.Length; index++)
             {
-                CreateKey(VirtualKeyControl, false),
-                CreateKey(VirtualKeyLeftWindows, false),
-                CreateKey(arrow, false),
-                CreateKey(arrow, true),
-                CreateKey(VirtualKeyLeftWindows, true),
-                CreateKey(VirtualKeyControl, true)
-            };
+                inputs.Add(CreateKey(keys[index], false));
+            }
+
+            for (int index = keys.Length - 1; index >= 0; index--)
+            {
+                inputs.Add(CreateKey(keys[index], true));
+            }
 
             uint sent = NativeMethods.SendInput(
-                (uint)inputs.Length,
-                inputs,
+                (uint)inputs.Count,
+                inputs.ToArray(),
                 Marshal.SizeOf(typeof(NativeMethods.Input)));
-            if (sent == (uint)inputs.Length)
+            if (sent == (uint)inputs.Count)
             {
                 error = null;
                 return true;
             }
 
-            error = "Windows no pudo cambiar de escritorio.";
+            error = failureMessage;
             return false;
         }
 
@@ -438,22 +468,18 @@ namespace Raudo
                 }
                 else
                 {
-                    using (CurrentDesktopAnchor anchor = new CurrentDesktopAnchor())
+                    Guid desktopId;
+                    if (!TryGetCurrentDesktopId(out desktopId))
                     {
-                        Guid desktopId;
-                        result = manager.GetWindowDesktopId(anchor.Handle, out desktopId);
-                        if (result < 0 || desktopId == Guid.Empty)
-                        {
-                            error = "Windows no pudo identificar el escritorio actual.";
-                            return false;
-                        }
+                        error = "Windows no pudo identificar el escritorio actual.";
+                        return false;
+                    }
 
-                        result = manager.MoveWindowToDesktop(window, ref desktopId);
-                        if (result < 0)
-                        {
-                            error = "La aplicación no permitió mover esa ventana.";
-                            return false;
-                        }
+                    result = manager.MoveWindowToDesktop(window, ref desktopId);
+                    if (result < 0)
+                    {
+                        error = "La aplicación no permitió mover esa ventana.";
+                        return false;
                     }
                 }
             }
@@ -475,6 +501,102 @@ namespace Raudo
 
             error = null;
             return true;
+        }
+
+        public bool TryMoveWindowToCurrentDesktop(IntPtr window, out string error)
+        {
+            if (!EnsurePublicManager())
+            {
+                error = "Los escritorios virtuales requieren Windows 10 o posterior.";
+                return false;
+            }
+
+            if (window == IntPtr.Zero || !DesktopNativeMethods.IsWindow(window))
+            {
+                error = "La ventana de Raudo todavía no está disponible.";
+                return false;
+            }
+
+            uint processId;
+            DesktopNativeMethods.GetWindowThreadProcessId(window, out processId);
+            if (processId != (uint)Process.GetCurrentProcess().Id)
+            {
+                error = "Raudo solo traslada sus propias ventanas con esta acción.";
+                return false;
+            }
+
+            bool alreadyCurrent;
+            int result = manager.IsWindowOnCurrentVirtualDesktop(window, out alreadyCurrent);
+            if (result < 0)
+            {
+                error = "Windows no pudo identificar el escritorio actual.";
+                return false;
+            }
+
+            if (alreadyCurrent)
+            {
+                error = null;
+                return true;
+            }
+
+            Guid desktopId;
+            if (!TryGetCurrentDesktopId(out desktopId))
+            {
+                error = "Windows no pudo identificar el escritorio actual.";
+                return false;
+            }
+
+            result = manager.MoveWindowToDesktop(window, ref desktopId);
+            if (result < 0)
+            {
+                error = "Windows no permitió mover Raudo al escritorio actual.";
+                return false;
+            }
+
+            error = null;
+            return true;
+        }
+
+        private bool TryGetCurrentDesktopId(out Guid desktopId)
+        {
+            desktopId = Guid.Empty;
+            InitializeInternalInterfaces();
+            object current = null;
+            try
+            {
+                if (internalManager11 != null)
+                {
+                    IVirtualDesktop11 desktop = internalManager11.GetCurrentDesktop();
+                    current = desktop;
+                    desktopId = desktop == null ? Guid.Empty : desktop.GetId();
+                }
+                else if (internalManager10 != null)
+                {
+                    IVirtualDesktop10 desktop = internalManager10.GetCurrentDesktop();
+                    current = desktop;
+                    desktopId = desktop == null ? Guid.Empty : desktop.GetId();
+                }
+
+                if (desktopId != Guid.Empty)
+                {
+                    return true;
+                }
+            }
+            catch (COMException)
+            {
+                desktopId = Guid.Empty;
+            }
+            finally
+            {
+                ReleaseComObject(ref current);
+            }
+
+            using (CurrentDesktopAnchor anchor = new CurrentDesktopAnchor())
+            {
+                return EnsurePublicManager()
+                    && manager.GetWindowDesktopId(anchor.Handle, out desktopId) >= 0
+                    && desktopId != Guid.Empty;
+            }
         }
 
         internal bool TryGetDesktopId(IntPtr window, out Guid desktopId)
@@ -951,6 +1073,9 @@ namespace Raudo
     [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     internal interface IVirtualDesktop10
     {
+        [return: MarshalAs(UnmanagedType.Bool)]
+        bool IsViewVisible(IApplicationView applicationView);
+        Guid GetId();
     }
 
     [ComImport]
@@ -958,6 +1083,9 @@ namespace Raudo
     [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     internal interface IVirtualDesktop11
     {
+        [return: MarshalAs(UnmanagedType.Bool)]
+        bool IsViewVisible(IApplicationView applicationView);
+        Guid GetId();
     }
 
     internal static class DesktopNativeMethods

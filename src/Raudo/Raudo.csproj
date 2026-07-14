@@ -65,6 +65,7 @@
     <Compile Include="ApplicationCatalog.cs" />
     <Compile Include="Controls.cs" />
     <Compile Include="DashboardControls.cs" />
+    <Compile Include="DesktopGuideForm.cs" />
     <Compile Include="GlobalHotKey.cs" />
     <Compile Include="KeepActiveService.cs" />
     <Compile Include="MainForm.cs" />

@@ -423,4 +423,126 @@ namespace Raudo
             return label;
         }
     }
+
+    internal sealed class DesktopWorkspaceSurface : RoundedPanel
+    {
+        private readonly DesktopWorkspaceGlyph glyph;
+        private readonly Label titleLabel;
+        private readonly Label descriptionLabel;
+        private readonly RoundedButton createButton;
+        private readonly RoundedButton guideButton;
+
+        public DesktopWorkspaceSurface()
+        {
+            Radius = 14;
+            BorderColor = Color.Transparent;
+            Size = new Size(472, 92);
+
+            glyph = new DesktopWorkspaceGlyph();
+            glyph.Location = new Point(16, 24);
+            Controls.Add(glyph);
+
+            titleLabel = CreateLabel(
+                "Escritorios de trabajo",
+                9.75F,
+                FontStyle.Bold,
+                new Point(76, 17),
+                new Size(204, 25));
+            Controls.Add(titleLabel);
+
+            descriptionLabel = CreateLabel(
+                "Separa tareas sin cerrar tus aplicaciones",
+                8.25F,
+                FontStyle.Regular,
+                new Point(76, 42),
+                new Size(212, 34));
+            Controls.Add(descriptionLabel);
+
+            createButton = CreateButton("Crear", new Point(290, 30), new Size(76, 34));
+            createButton.TabIndex = 0;
+            createButton.AccessibleName = "Crear un escritorio de trabajo";
+            createButton.Click += delegate
+            {
+                EventHandler handler = CreateRequested;
+                if (handler != null)
+                {
+                    handler(this, EventArgs.Empty);
+                }
+            };
+            Controls.Add(createButton);
+
+            guideButton = CreateButton("Ver guía", new Point(374, 30), new Size(78, 34));
+            guideButton.TabIndex = 1;
+            guideButton.AccessibleName = "Explicar cómo funcionan los escritorios";
+            guideButton.Click += delegate
+            {
+                EventHandler handler = GuideRequested;
+                if (handler != null)
+                {
+                    handler(this, EventArgs.Empty);
+                }
+            };
+            Controls.Add(guideButton);
+        }
+
+        public event EventHandler CreateRequested;
+        public event EventHandler GuideRequested;
+
+        public void ApplyTheme(ThemePalette palette)
+        {
+            BackColor = palette.Surface;
+            BorderColor = Color.Transparent;
+            titleLabel.ForeColor = palette.Text;
+            descriptionLabel.ForeColor = palette.TextMuted;
+            glyph.ApplyTheme(palette);
+            ApplyButtonTheme(createButton, palette, true);
+            ApplyButtonTheme(guideButton, palette, false);
+        }
+
+        private static RoundedButton CreateButton(string text, Point location, Size size)
+        {
+            RoundedButton button = new RoundedButton();
+            button.Text = text;
+            button.Font = new Font(
+                "Segoe UI Semibold",
+                8.25F,
+                FontStyle.Bold,
+                GraphicsUnit.Point);
+            button.Location = location;
+            button.Size = size;
+            button.Radius = 9;
+            return button;
+        }
+
+        private static void ApplyButtonTheme(
+            RoundedButton button,
+            ThemePalette palette,
+            bool primary)
+        {
+            button.ForeColor = primary ? palette.PrimaryForeground : palette.Text;
+            button.NormalColor = primary ? palette.Primary : palette.SurfaceRaised;
+            button.HoverColor = primary ? palette.PrimaryHover : palette.Border;
+            button.FocusColor = primary ? palette.PrimaryForeground : palette.Primary;
+        }
+
+        private static Label CreateLabel(
+            string text,
+            float size,
+            FontStyle style,
+            Point location,
+            Size bounds)
+        {
+            Label label = new Label();
+            label.Text = text;
+            label.Font = new Font(
+                style == FontStyle.Regular ? "Segoe UI" : "Segoe UI Semibold",
+                size,
+                style,
+                GraphicsUnit.Point);
+            label.Location = location;
+            label.Size = bounds;
+            label.BackColor = Color.Transparent;
+            return label;
+        }
+    }
 }

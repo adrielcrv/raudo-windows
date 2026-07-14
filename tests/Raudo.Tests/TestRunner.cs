@@ -99,6 +99,28 @@ internal static class TestRunner
                 return 0;
             }
 
+            if (args.Length == 1
+                && args[0].StartsWith("--capture-desktop-guide-light=", StringComparison.Ordinal))
+            {
+                CaptureDesktopGuide(
+                    args[0].Substring("--capture-desktop-guide-light=".Length),
+                    false,
+                    false);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
+                && args[0].StartsWith("--capture-desktop-guide-created-dark=", StringComparison.Ordinal))
+            {
+                CaptureDesktopGuide(
+                    args[0].Substring("--capture-desktop-guide-created-dark=".Length),
+                    true,
+                    true);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
             if (args.Length == 1 && args[0].StartsWith("--capture-ui-dark=", StringComparison.Ordinal))
             {
                 CaptureUi(args[0].Substring("--capture-ui-dark=".Length), true);
@@ -1454,6 +1476,46 @@ internal static class TestRunner
         }
     }
 
+    private static void CaptureDesktopGuide(string path, bool dark, bool created)
+    {
+        Application.EnableVisualStyles();
+        Application.SetCompatibleTextRenderingDefault(false);
+        using (Icon icon = IconFactory.Create(false))
+        using (DesktopGuideForm form = new DesktopGuideForm(icon))
+        {
+            form.ApplyTheme(ThemePalette.Create(dark));
+            if (created)
+            {
+                form.ShowCreated();
+            }
+            else
+            {
+                form.ShowIntroduction();
+            }
+
+            Application.DoEvents();
+            Thread.Sleep(100);
+            Application.DoEvents();
+            using (Bitmap full = new Bitmap(form.Width, form.Height))
+            {
+                form.DrawToBitmap(full, new Rectangle(0, 0, form.Width, form.Height));
+                int border = Math.Max(0, (form.Width - form.ClientSize.Width) / 2);
+                int top = Math.Max(0, form.Height - form.ClientSize.Height - border);
+                Rectangle clientBounds = new Rectangle(
+                    border,
+                    top,
+                    form.ClientSize.Width,
+                    form.ClientSize.Height);
+                using (Bitmap client = full.Clone(clientBounds, PixelFormat.Format32bppArgb))
+                {
+                    client.Save(path, ImageFormat.Png);
+                }
+            }
+
+            form.AllowCloseAndClose();
+        }
+    }
+
     private static void RunVoiceGrammarProbe()
     {
         VoiceAvailability availability = VoiceRecognitionService.GetAvailability();
@@ -1568,6 +1630,14 @@ internal static class TestRunner
             VoiceCommandParser.Parse("cambia de escritorio", applications).Kind
                 == VoiceCommandKind.DesktopAdjacent,
             "El cambio al escritorio adyacente no se clasificó correctamente.");
+        Assert(
+            VoiceCommandParser.Parse("crea un nuevo escritorio", applications).Kind
+                == VoiceCommandKind.DesktopCreate,
+            "La creación de escritorio no se clasificó correctamente.");
+        Assert(
+            VoiceCommandParser.Parse("muéstrame los escritorios", applications).Kind
+                == VoiceCommandKind.DesktopOverview,
+            "La vista de escritorios no se clasificó correctamente.");
         VoiceCommand conversion = VoiceCommandParser.Parse(
             "convierte diez kilómetros a millas",
             applications);
@@ -2175,6 +2245,17 @@ internal static class TestRunner
             mainForm.AllowCloseAndClose();
         }
 
+        using (Icon guideIcon = IconFactory.Create(false))
+        using (DesktopGuideForm guide = new DesktopGuideForm(guideIcon))
+        {
+            guide.ApplyTheme(highContrast);
+            guide.ShowIntroduction();
+            AssertAccessibleControls(guide);
+            ScaleToTargetDpi(guide, 144);
+            AssertControlsWithinParent(guide);
+            guide.AllowCloseAndClose();
+        }
+
         MediaControlService miniMediaControl = new MediaControlService(
             delegate(NativeMethods.Input[] inputs) { return (uint)inputs.Length; });
         using (FakeMediaSessionService miniMediaSessions = new FakeMediaSessionService())
@@ -2570,6 +2651,20 @@ internal static class TestRunner
                         ? canNavigateLeft
                         : canNavigateRight,
                     "No se detectó la dirección para regresar al escritorio original.");
+
+                string moveRaudoError;
+                Assert(
+                    service.TryMoveWindowToCurrentDesktop(
+                        sourceAnchor.Handle,
+                        out moveRaudoError),
+                    moveRaudoError ?? "No se pudo trasladar una ventana de Raudo.");
+                Guid raudoDesktop;
+                Guid activeDesktop;
+                Assert(
+                    service.TryGetDesktopId(sourceAnchor.Handle, out raudoDesktop)
+                        && service.TryGetDesktopId(destinationAnchor.Handle, out activeDesktop)
+                        && raudoDesktop == activeDesktop,
+                    "La ventana de Raudo no terminó en el escritorio activo.");
 
                 System.Collections.Generic.IList<DesktopWindow> windows;
                 string listError;

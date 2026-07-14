@@ -19,6 +19,8 @@ namespace Raudo
         DesktopLeft,
         DesktopRight,
         DesktopAdjacent,
+        DesktopCreate,
+        DesktopOverview,
         ScreenCapture,
         MediaPlayPause,
         MediaPrevious,
@@ -221,6 +223,20 @@ namespace Raudo
                         VoiceCommandKind.DesktopAdjacent,
                         "Cambiando de escritorio",
                         "Escritorio virtual adyacente");
+                case "crea un escritorio":
+                case "crea un nuevo escritorio":
+                case "nuevo escritorio":
+                    return VoiceCommand.Create(
+                        VoiceCommandKind.DesktopCreate,
+                        "Escritorio creado",
+                        "Nuevo espacio de trabajo");
+                case "muestrame los escritorios":
+                case "muestra los escritorios":
+                case "vista de escritorios":
+                    return VoiceCommand.Create(
+                        VoiceCommandKind.DesktopOverview,
+                        "Vista de escritorios",
+                        "Ventanas y espacios abiertos");
                 case "recorta pantalla":
                 case "toma una captura":
                 case "captura pantalla":
@@ -480,6 +496,12 @@ namespace Raudo
             "escritorio siguiente",
             "cambia al escritorio derecho",
             "cambia de escritorio",
+            "crea un escritorio",
+            "crea un nuevo escritorio",
+            "nuevo escritorio",
+            "muéstrame los escritorios",
+            "muestra los escritorios",
+            "vista de escritorios",
             "recorta pantalla",
             "toma una captura",
             "captura pantalla",

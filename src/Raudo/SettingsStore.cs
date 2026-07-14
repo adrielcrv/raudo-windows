@@ -21,6 +21,7 @@ namespace Raudo
         public int DurationMinutes { get; set; }
         public bool MiniModeEnabled { get; set; }
         public bool MiniHintShown { get; set; }
+        public bool DesktopGuideShown { get; set; }
         public int MiniCenterX { get; set; }
         public int MiniCenterY { get; set; }
         public int SaltoCenterX { get; set; }

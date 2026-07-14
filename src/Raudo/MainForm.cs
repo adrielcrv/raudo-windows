@@ -43,6 +43,7 @@ namespace Raudo
         private readonly PulseSurface pulseSurface;
         private readonly Label actionsSectionLabel;
         private readonly ScreenCaptureSurface captureSurface;
+        private readonly DesktopWorkspaceSurface desktopWorkspaceSurface;
         private readonly Label preferencesSectionLabel;
         private readonly PreferencesSurface preferencesSurface;
         private readonly Label trayHintLabel;
@@ -61,7 +62,7 @@ namespace Raudo
 
             Text = "Raudo";
             AccessibleDescription = "Herramientas locales y ligeras para Windows";
-            ClientSize = new Size(520, 628);
+            ClientSize = new Size(520, 724);
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             MinimizeBox = true;
@@ -130,12 +131,19 @@ namespace Raudo
             captureSurface.ActionRequested += delegate { OnScreenCaptureRequested(); };
             Controls.Add(captureSurface);
 
-            preferencesSectionLabel = CreateSectionLabel("PREFERENCIAS", new Point(24, 424));
+            desktopWorkspaceSurface = new DesktopWorkspaceSurface();
+            desktopWorkspaceSurface.Location = new Point(24, 412);
+            desktopWorkspaceSurface.TabIndex = 3;
+            desktopWorkspaceSurface.CreateRequested += delegate { OnDesktopCreateRequested(); };
+            desktopWorkspaceSurface.GuideRequested += delegate { OnDesktopGuideRequested(); };
+            Controls.Add(desktopWorkspaceSurface);
+
+            preferencesSectionLabel = CreateSectionLabel("PREFERENCIAS", new Point(24, 524));
             Controls.Add(preferencesSectionLabel);
 
             preferencesSurface = new PreferencesSurface();
-            preferencesSurface.Location = new Point(24, 448);
-            preferencesSurface.TabIndex = 3;
+            preferencesSurface.Location = new Point(24, 548);
+            preferencesSurface.TabIndex = 4;
             preferencesSurface.MiniModeChanged += MiniToggleCheckedChanged;
             preferencesSurface.StartupChanged += StartupToggleCheckedChanged;
             Controls.Add(preferencesSurface);
@@ -144,7 +152,7 @@ namespace Raudo
                 "Ctrl + Alt + Espacio abre Salto  ·  Cerrar mantiene Raudo junto al reloj.",
                 8F,
                 FontStyle.Regular,
-                new Point(25, 592),
+                new Point(25, 692),
                 new Size(470, 20));
             Controls.Add(trayHintLabel);
 
@@ -175,6 +183,8 @@ namespace Raudo
         public event EventHandler ToggleRequested;
         public event EventHandler<DurationChangedEventArgs> DurationChanged;
         public event EventHandler ScreenCaptureRequested;
+        public event EventHandler DesktopCreateRequested;
+        public event EventHandler DesktopGuideRequested;
         public event EventHandler<StartupChangedEventArgs> StartupChanged;
         public event EventHandler<MiniModeChangedEventArgs> MiniModeChanged;
         public event EventHandler<MinimizeRequestedEventArgs> MinimizeRequested;
@@ -221,6 +231,7 @@ namespace Raudo
             brandMark.ApplyTheme(palette);
             pulseSurface.ApplyTheme(palette);
             captureSurface.ApplyTheme(palette);
+            desktopWorkspaceSurface.ApplyTheme(palette);
             preferencesSurface.ApplyTheme(palette);
             RefreshState();
             ResumeLayout();
@@ -424,6 +435,24 @@ namespace Raudo
         private void OnScreenCaptureRequested()
         {
             EventHandler handler = ScreenCaptureRequested;
+            if (handler != null)
+            {
+                handler(this, EventArgs.Empty);
+            }
+        }
+
+        private void OnDesktopCreateRequested()
+        {
+            EventHandler handler = DesktopCreateRequested;
+            if (handler != null)
+            {
+                handler(this, EventArgs.Empty);
+            }
+        }
+
+        private void OnDesktopGuideRequested()
+        {
+            EventHandler handler = DesktopGuideRequested;
             if (handler != null)
             {
                 handler(this, EventArgs.Empty);
