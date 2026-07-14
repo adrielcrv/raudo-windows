@@ -424,11 +424,14 @@ namespace Raudo
             foreach (InstalledApplication rawApplication in installed)
             {
                 InstalledApplication application = rawApplication;
+                string aliases = application.Aliases == null
+                    ? string.Empty
+                    : string.Join(" ", application.Aliases);
                 actions.Add(new RaudoAction(
                     "open-application:" + application.Identifier,
                     application.Name,
                     "Aplicación instalada",
-                    "aplicacion programa iniciar abrir " + application.Name,
+                    "aplicacion programa iniciar abrir " + application.Name + " " + aliases,
                     "Abrir",
                     RaudoActionGlyph.Application,
                     RaudoActionKind.Application,
@@ -1039,8 +1042,24 @@ namespace Raudo
                 return;
             }
 
+            IList<InstalledApplication> applications =
+                installedApplicationCatalog.GetSnapshot();
             VoiceRecognitionOutcome outcome = await voiceRecognitionService
-                .ListenOnceAsync(installedApplicationCatalog.GetSnapshot());
+                .ListenSessionAsync(
+                    applications,
+                    2,
+                    delegate(VoiceRecognitionOutcome candidate)
+                    {
+                        return VoiceSessionPolicy.ShouldRetry(candidate, applications);
+                    },
+                    delegate(VoiceRecognitionOutcome candidate, int nextAttempt)
+                    {
+                        ShowVoiceRetry(
+                            sessionVersion,
+                            candidate,
+                            applications,
+                            nextAttempt);
+                    });
             if (exiting || sessionVersion != voiceSessionVersion)
             {
                 return;
@@ -1048,6 +1067,36 @@ namespace Raudo
 
             voiceSessionActive = false;
             PresentVoiceOutcome(outcome);
+        }
+
+        private void ShowVoiceRetry(
+            int sessionVersion,
+            VoiceRecognitionOutcome outcome,
+            IList<InstalledApplication> applications,
+            int nextAttempt)
+        {
+            RunOnUiThread(delegate
+            {
+                if (exiting
+                    || !voiceSessionActive
+                    || sessionVersion != voiceSessionVersion)
+                {
+                    return;
+                }
+
+                EnsureVoiceOverlayForm();
+                if (!EnsureTransientWindowOnCurrentDesktop(
+                    voiceOverlayForm,
+                    "Reintentar la orden de voz"))
+                {
+                    return;
+                }
+
+                voiceOverlayForm.ShowState(
+                    VoiceOverlayState.NotUnderstood,
+                    "No entendí · intento " + nextAttempt + " de 2",
+                    VoiceSessionPolicy.DescribeRetry(outcome, applications));
+            });
         }
 
         private void VoiceHotKeyPressed(object sender, EventArgs eventArgs)

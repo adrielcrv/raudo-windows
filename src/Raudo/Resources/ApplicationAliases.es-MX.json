@@ -1,0 +1,38 @@
+{
+  "SchemaVersion": 1,
+  "LanguageTag": "es-MX",
+  "Applications": [
+    {
+      "IdentifierContains": ["Microsoft.WindowsNotepad_"],
+      "Aliases": ["Bloc de notas", "Editor de texto"]
+    },
+    {
+      "IdentifierContains": ["Microsoft.WindowsCalculator_"],
+      "Aliases": ["Calculadora"]
+    },
+    {
+      "IdentifierContains": ["Microsoft.WindowsCamera_"],
+      "Aliases": ["Cámara"]
+    },
+    {
+      "IdentifierContains": ["Microsoft.WindowsStore_"],
+      "Aliases": ["Tienda de Microsoft"]
+    },
+    {
+      "IdentifierContains": ["Microsoft.Windows.Photos_"],
+      "Aliases": ["Fotos"]
+    },
+    {
+      "IdentifierContains": ["Microsoft.ScreenSketch_"],
+      "Aliases": ["Herramienta Recortes"]
+    },
+    {
+      "IdentifierContains": ["Microsoft.MicrosoftStickyNotes_"],
+      "Aliases": ["Notas adhesivas", "Notas rápidas"]
+    },
+    {
+      "IdentifierContains": ["Microsoft.WindowsTerminal_"],
+      "Aliases": ["Terminal de Windows"]
+    }
+  ]
+}

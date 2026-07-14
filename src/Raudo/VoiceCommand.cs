@@ -423,6 +423,8 @@ namespace Raudo
             }
 
             string normalized = RaudoActionCatalog.Normalize(requestedName);
+            InstalledApplication exactMatch = null;
+            int exactCount = 0;
             InstalledApplication prefixMatch = null;
             int prefixCount = 0;
             foreach (InstalledApplication application in applications)
@@ -432,21 +434,59 @@ namespace Raudo
                     continue;
                 }
 
-                string candidate = RaudoActionCatalog.Normalize(application.Name);
-                if (string.Equals(candidate, normalized, StringComparison.Ordinal))
+                bool exact = false;
+                bool prefix = false;
+                EvaluateApplicationName(application.Name, normalized, ref exact, ref prefix);
+                if (application.Aliases != null)
                 {
-                    return application;
+                    foreach (string alias in application.Aliases)
+                    {
+                        EvaluateApplicationName(alias, normalized, ref exact, ref prefix);
+                    }
                 }
 
-                if (candidate.StartsWith(normalized, StringComparison.Ordinal)
-                    || normalized.StartsWith(candidate, StringComparison.Ordinal))
+                if (exact)
+                {
+                    exactMatch = application;
+                    exactCount++;
+                }
+                else if (prefix)
                 {
                     prefixMatch = application;
                     prefixCount++;
                 }
             }
 
-            return prefixCount == 1 ? prefixMatch : null;
+            return exactCount == 1
+                ? exactMatch
+                : exactCount == 0 && prefixCount == 1
+                    ? prefixMatch
+                    : null;
+        }
+
+        private static void EvaluateApplicationName(
+            string value,
+            string requested,
+            ref bool exact,
+            ref bool prefix)
+        {
+            string candidate = RaudoActionCatalog.Normalize(value);
+            if (candidate.Length == 0)
+            {
+                return;
+            }
+
+            if (string.Equals(candidate, requested, StringComparison.Ordinal))
+            {
+                exact = true;
+                return;
+            }
+
+            if (candidate.StartsWith(requested, StringComparison.Ordinal)
+                || requested.StartsWith(candidate, StringComparison.Ordinal))
+            {
+                prefix = true;
+            }
         }
 
         private static bool TryRemovePrefix(
@@ -468,6 +508,7 @@ namespace Raudo
     internal static class VoiceGrammarBuilder
     {
         public const int MaximumApplications = 384;
+        public const int MaximumApplicationPhrases = MaximumApplications * 4;
 
         private static readonly string[] FixedCommands =
         {
@@ -591,22 +632,52 @@ namespace Raudo
 
             foreach (InstalledApplication application in applications)
             {
-                if (application == null || phrases.Count >= MaximumApplications * 2)
+                if (application == null || phrases.Count >= MaximumApplicationPhrases)
                 {
                     break;
                 }
 
-                string name = NormalizeGrammarPhrase(application.Name);
-                if (name.Length == 0 || !unique.Add(name))
+                AddApplicationPhrases(application.Name, phrases, unique);
+                if (application.Aliases == null)
                 {
                     continue;
                 }
 
-                phrases.Add("abre " + name);
-                phrases.Add("raudo abre " + name);
+                foreach (string alias in application.Aliases)
+                {
+                    AddApplicationPhrases(alias, phrases, unique);
+                    if (phrases.Count >= MaximumApplicationPhrases)
+                    {
+                        break;
+                    }
+                }
             }
 
             return phrases;
+        }
+
+        private static void AddApplicationPhrases(
+            string value,
+            IList<string> phrases,
+            ISet<string> unique)
+        {
+            string name = NormalizeGrammarPhrase(value);
+            if (name.Length == 0)
+            {
+                return;
+            }
+
+            string direct = "abre " + name;
+            if (phrases.Count < MaximumApplicationPhrases && unique.Add(direct))
+            {
+                phrases.Add(direct);
+            }
+
+            string addressed = "raudo abre " + name;
+            if (phrases.Count < MaximumApplicationPhrases && unique.Add(addressed))
+            {
+                phrases.Add(addressed);
+            }
         }
 
         private static string NormalizeGrammarPhrase(string value)
@@ -630,6 +701,53 @@ namespace Raudo
             }
 
             return result.ToString().Trim();
+        }
+    }
+
+    internal static class VoiceSessionPolicy
+    {
+        public static bool ShouldRetry(
+            VoiceRecognitionOutcome outcome,
+            IList<InstalledApplication> applications)
+        {
+            if (outcome == null)
+            {
+                return false;
+            }
+
+            if (outcome.Kind == VoiceRecognitionOutcomeKind.NotUnderstood)
+            {
+                return true;
+            }
+
+            return outcome.Kind == VoiceRecognitionOutcomeKind.Success
+                && !VoiceCommandParser.Parse(outcome.Text, applications).IsRecognized;
+        }
+
+        public static string DescribeRetry(
+            VoiceRecognitionOutcome outcome,
+            IList<InstalledApplication> applications)
+        {
+            if (outcome == null)
+            {
+                return "Vuelvo a escuchar una vez más.";
+            }
+
+            if (!string.IsNullOrWhiteSpace(outcome.Text))
+            {
+                return "Escuché “" + outcome.Text + "”. Vuelvo a escuchar una vez más.";
+            }
+
+            string message = outcome.Message;
+            if (outcome.Kind == VoiceRecognitionOutcomeKind.Success)
+            {
+                VoiceCommand command = VoiceCommandParser.Parse(outcome.Text, applications);
+                message = command.Detail;
+            }
+
+            return string.IsNullOrWhiteSpace(message)
+                ? "Vuelvo a escuchar una vez más."
+                : message + " Vuelvo a escuchar una vez más.";
         }
     }
 

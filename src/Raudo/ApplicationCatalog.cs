@@ -10,13 +10,28 @@ namespace Raudo
     internal sealed class InstalledApplication
     {
         public InstalledApplication(string name, string identifier)
+            : this(
+                name,
+                identifier,
+                ApplicationAliasCatalog.GetAliases(name, identifier))
+        {
+        }
+
+        internal InstalledApplication(
+            string name,
+            string identifier,
+            IList<string> aliases)
         {
             Name = name ?? string.Empty;
             Identifier = identifier ?? string.Empty;
+            Aliases = aliases == null
+                ? new List<string>().AsReadOnly()
+                : new List<string>(aliases).AsReadOnly();
         }
 
         public string Name { get; private set; }
         public string Identifier { get; private set; }
+        public IList<string> Aliases { get; private set; }
     }
 
     internal sealed class InstalledApplicationCatalog
@@ -182,7 +197,8 @@ namespace Raudo
                         key,
                         new InstalledApplication(
                             application.Name.Trim(),
-                            application.Identifier.Trim()));
+                            application.Identifier.Trim(),
+                            application.Aliases));
                     if (unique.Count >= MaximumApplications)
                     {
                         break;

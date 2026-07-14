@@ -116,9 +116,23 @@ namespace Raudo
             }
         }
 
-        public async Task<VoiceRecognitionOutcome> ListenOnceAsync(
+        public Task<VoiceRecognitionOutcome> ListenOnceAsync(
             IList<InstalledApplication> applications)
         {
+            return ListenSessionAsync(applications, 1, null, null);
+        }
+
+        public async Task<VoiceRecognitionOutcome> ListenSessionAsync(
+            IList<InstalledApplication> applications,
+            int maximumAttempts,
+            Func<VoiceRecognitionOutcome, bool> shouldRetry,
+            Action<VoiceRecognitionOutcome, int> retrying)
+        {
+            if (maximumAttempts < 1 || maximumAttempts > 2)
+            {
+                throw new ArgumentOutOfRangeException("maximumAttempts");
+            }
+
             CancellationTokenSource localCancellation;
             lock (sync)
             {
@@ -196,29 +210,55 @@ namespace Raudo
                         DescribeStatus(compilation.Status));
                 }
 
-                RaisePhase(VoiceRecognitionPhase.Listening);
-                SpeechRecognitionResult result = await recognizer
-                    .RecognizeAsync()
-                    .AsTask(localCancellation.Token);
-                if (result.Status != SpeechRecognitionResultStatus.Success)
+                for (int attempt = 0; attempt < maximumAttempts; attempt++)
                 {
-                    return MapResultStatus(result.Status);
-                }
+                    RaisePhase(VoiceRecognitionPhase.Listening);
+                    SpeechRecognitionResult result = await recognizer
+                        .RecognizeAsync()
+                        .AsTask(localCancellation.Token);
+                    VoiceRecognitionOutcome outcome;
+                    if (result.Status != SpeechRecognitionResultStatus.Success)
+                    {
+                        outcome = MapResultStatus(result.Status);
+                    }
+                    else if (result.Confidence == SpeechRecognitionConfidence.Rejected
+                        || result.Confidence == SpeechRecognitionConfidence.Low
+                        || string.IsNullOrWhiteSpace(result.Text))
+                    {
+                        outcome = new VoiceRecognitionOutcome(
+                            VoiceRecognitionOutcomeKind.NotUnderstood,
+                            result.Text,
+                            "No reconocí la orden con suficiente claridad.");
+                    }
+                    else
+                    {
+                        outcome = new VoiceRecognitionOutcome(
+                            VoiceRecognitionOutcomeKind.Success,
+                            result.Text,
+                            string.Empty);
+                    }
 
-                if (result.Confidence == SpeechRecognitionConfidence.Rejected
-                    || result.Confidence == SpeechRecognitionConfidence.Low
-                    || string.IsNullOrWhiteSpace(result.Text))
-                {
-                    return new VoiceRecognitionOutcome(
-                        VoiceRecognitionOutcomeKind.NotUnderstood,
-                        result.Text,
-                        "No reconocí la orden con suficiente claridad.");
+                    bool hasAnotherAttempt = attempt + 1 < maximumAttempts;
+                    if (hasAnotherAttempt
+                        && shouldRetry != null
+                        && shouldRetry(outcome))
+                    {
+                        if (retrying != null)
+                        {
+                            retrying(outcome, attempt + 2);
+                        }
+
+                        await Task.Delay(750, localCancellation.Token);
+                        continue;
+                    }
+
+                    return outcome;
                 }
 
                 return new VoiceRecognitionOutcome(
-                    VoiceRecognitionOutcomeKind.Success,
-                    result.Text,
-                    string.Empty);
+                    VoiceRecognitionOutcomeKind.NotUnderstood,
+                    string.Empty,
+                    "Windows no reconoció una orden válida.");
             }
             catch (OperationCanceledException)
             {

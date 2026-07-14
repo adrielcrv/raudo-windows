@@ -49,6 +49,20 @@ internal static class TestRunner
             }
 
             if (args.Length == 1
+                && args[0].StartsWith("--capture-voice-retry-dark=", StringComparison.Ordinal))
+            {
+                CaptureVoiceOverlay(
+                    args[0].Substring("--capture-voice-retry-dark=".Length),
+                    ThemePalette.Create(true),
+                    VoiceOverlayState.NotUnderstood,
+                    "No entendí · intento 2 de 2",
+                    "Escuché “abre notas”. Vuelvo a escuchar una vez más.",
+                    96);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
                 && args[0].StartsWith("--capture-voice-high-contrast=", StringComparison.Ordinal))
             {
                 CaptureVoiceOverlay(
@@ -953,11 +967,14 @@ internal static class TestRunner
             foreach (InstalledApplication rawApplication in applicationSnapshot)
             {
                 InstalledApplication application = rawApplication;
+                string aliases = application.Aliases == null
+                    ? string.Empty
+                    : string.Join(" ", application.Aliases);
                 actions.Add(new RaudoAction(
                     "open-application:" + application.Identifier,
                     application.Name,
                     "Aplicación instalada",
-                    "aplicacion programa iniciar abrir " + application.Name,
+                    "aplicacion programa iniciar abrir " + application.Name + " " + aliases,
                     "Abrir",
                     RaudoActionGlyph.Application,
                     RaudoActionKind.Application,
@@ -1596,7 +1613,10 @@ internal static class TestRunner
         IList<InstalledApplication> applications = new List<InstalledApplication>
         {
             new InstalledApplication("Google Chrome", "test.chrome"),
-            new InstalledApplication("Microsoft Excel", "test.excel")
+            new InstalledApplication("Microsoft Excel", "test.excel"),
+            new InstalledApplication(
+                "Notepad",
+                "Microsoft.WindowsNotepad_8wekyb3d8bbwe!App")
         };
         VoiceCommand calculation = VoiceCommandParser.Parse(
             "Raudo cuánto es ciento treinta y dos por cuatrocientos treinta y dos",
@@ -1614,6 +1634,18 @@ internal static class TestRunner
             app.Kind == VoiceCommandKind.OpenApplication
                 && app.ApplicationIdentifier == "test.excel",
             "La orden de aplicación no conservó el identificador seguro del catálogo.");
+        InstalledApplication notepad = applications[2];
+        Assert(
+            notepad.Aliases.Contains("Bloc de notas"),
+            "El catálogo embebido no vinculó Bloc de notas con la identidad de Notepad.");
+        VoiceCommand localizedApp = VoiceCommandParser.Parse(
+            "raudo abre bloc de notas",
+            applications);
+        Assert(
+            localizedApp.Kind == VoiceCommandKind.OpenApplication
+                && localizedApp.ApplicationIdentifier
+                    == "Microsoft.WindowsNotepad_8wekyb3d8bbwe!App",
+            "El alias localizado no conservó la identidad instalada de Notepad.");
         Assert(
             VoiceCommandParser.Parse("abre youtube", applications).Kind
                 == VoiceCommandKind.OpenYouTube,
@@ -1661,6 +1693,22 @@ internal static class TestRunner
                 == VoiceCommandKind.Unknown,
             "Una aplicación ambigua se eligió sin confirmación.");
 
+        IList<InstalledApplication> ambiguousAliases = new List<InstalledApplication>
+        {
+            new InstalledApplication(
+                "Editor uno",
+                "test.editor.one",
+                new List<string> { "editor" }),
+            new InstalledApplication(
+                "Editor dos",
+                "test.editor.two",
+                new List<string> { "editor" })
+        };
+        Assert(
+            VoiceCommandParser.Parse("abre editor", ambiguousAliases).Kind
+                == VoiceCommandKind.Unknown,
+            "Un alias compartido eligió una aplicación sin confirmación.");
+
         string grammar = VoiceGrammarBuilder.BuildSrgs();
         Assert(
             grammar.IndexOf("SpeechRecognitionTopicConstraint", StringComparison.OrdinalIgnoreCase) < 0
@@ -1681,6 +1729,46 @@ internal static class TestRunner
                 && safePhrases[0] == "abre bad app tool"
                 && safePhrases[1] == "raudo abre bad app tool",
             "Los nombres de aplicación no se normalizaron para la gramática.");
+
+        IList<string> localizedPhrases = VoiceGrammarBuilder.BuildApplicationPhrases(
+            applications);
+        Assert(
+            localizedPhrases.Contains("abre bloc de notas")
+                && localizedPhrases.Contains("raudo abre bloc de notas"),
+            "La gramática de voz no incluyó el alias localizado de Notepad.");
+
+        Assert(
+            VoiceSessionPolicy.ShouldRetry(
+                new VoiceRecognitionOutcome(
+                    VoiceRecognitionOutcomeKind.NotUnderstood,
+                    string.Empty,
+                    "Audio poco claro"),
+                applications),
+            "Una orden no entendida no habilitó la reescucha.");
+        Assert(
+            !VoiceSessionPolicy.ShouldRetry(
+                new VoiceRecognitionOutcome(
+                    VoiceRecognitionOutcomeKind.Success,
+                    "abre bloc de notas",
+                    string.Empty),
+                applications),
+            "Una orden resuelta por alias pidió una reescucha innecesaria.");
+        Assert(
+            VoiceSessionPolicy.ShouldRetry(
+                new VoiceRecognitionOutcome(
+                    VoiceRecognitionOutcomeKind.Success,
+                    "orden desconocida",
+                    string.Empty),
+                applications),
+            "Una orden reconocida pero no resuelta no habilitó la reescucha.");
+        Assert(
+            !VoiceSessionPolicy.ShouldRetry(
+                new VoiceRecognitionOutcome(
+                    VoiceRecognitionOutcomeKind.Error,
+                    string.Empty,
+                    "Error"),
+                applications),
+            "Un error de voz intentó reiniciar la escucha.");
 
         using (VoiceRecognitionService service = new VoiceRecognitionService())
         {
