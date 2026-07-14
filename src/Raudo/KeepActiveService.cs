@@ -405,6 +405,15 @@ namespace Raudo
                 return false;
             }
 
+            if (!NativeMethods.SetCursorPos(cursor.X, cursor.Y))
+            {
+                int win32Error = Marshal.GetLastWin32Error();
+                error = win32Error == 0
+                    ? "Windows no pudo restaurar la posición exacta del cursor."
+                    : new Win32Exception(win32Error).Message;
+                return false;
+            }
+
             error = null;
             return true;
         }

@@ -5,14 +5,16 @@ Utilidades locales y ligeras para Windows.
 USO
 
 1. Ejecuta Raudo.exe.
-2. Presiona Ctrl + Alt + Espacio para abrir Salto y buscar una ventana,
+2. La bienvenida permite usar esta copia sin instalar o integrarla en el menú
+   Inicio sin permisos de administrador.
+3. Presiona Ctrl + Alt + Espacio para abrir Salto y buscar una ventana,
    aplicación, carpeta conocida o acción, realizar un cálculo local o usar un
    control multimedia.
-3. Presiona Ctrl + Alt + V para decir una orden local en español.
-4. Elige una duración e inicia Pulso cuando lo necesites.
-5. Cierra la ventana para conservar Raudo junto al reloj.
-6. Activa Modo Mini para navegar entre escritorios y traer ventanas.
-7. Usa Salir de Raudo en el menú de la bandeja para terminar el proceso.
+4. Presiona Ctrl + Alt + V para decir una orden local en español.
+5. Elige una duración e inicia Pulso cuando lo necesites.
+6. Cierra la ventana para conservar Raudo junto al reloj.
+7. Activa Modo Mini para navegar entre escritorios y traer ventanas.
+8. Usa Salir de Raudo en el menú de la bandeja para terminar el proceso.
 
 SALTO
 

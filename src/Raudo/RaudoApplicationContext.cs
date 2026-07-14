@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -41,11 +42,14 @@ namespace Raudo
         private readonly GlobalHotKey saltoHotKey;
         private readonly GlobalHotKey voiceHotKey;
         private readonly VoiceRecognitionService voiceRecognitionService;
+        private readonly string currentVersion;
+        private readonly bool welcomeShowsChanges;
 
         private MiniForm miniForm;
         private SaltoForm saltoForm;
         private VoiceOverlayForm voiceOverlayForm;
         private DesktopGuideForm desktopGuideForm;
+        private WelcomeForm welcomeForm;
         private ConnectedMinimizeTransition minimizeTransition;
         private KeepActivePhase? pendingReminder;
         private DateTime pendingReminderExpiresUtc;
@@ -54,11 +58,16 @@ namespace Raudo
         private int voiceSessionVersion;
 
         private bool exiting;
+        private bool welcomeOpenedAutomatically;
+
+        public string RestartAfterExitPath { get; private set; }
 
         public RaudoApplicationContext(bool showWindowAtStartup, WaitHandle showRequestEvent)
         {
             settingsStore = new SettingsStore();
             settings = settingsStore.Load();
+            currentVersion = Assembly.GetExecutingAssembly().GetName().Version.ToString(3);
+            welcomeShowsChanges = settingsStore.HadStoredSettings;
             idleIcon = IconFactory.Create(false);
             activeIcon = IconFactory.Create(true);
             keepActiveService = new KeepActiveService();
@@ -161,8 +170,12 @@ namespace Raudo
             trayMenu.Items.Add(miniModeItem);
 
             ToolStripMenuItem openItem = new ToolStripMenuItem("Abrir Raudo");
-            openItem.Click += delegate { ShowWindow(); };
+            openItem.Click += delegate { ShowPrimaryWindow(); };
             trayMenu.Items.Add(openItem);
+
+            ToolStripMenuItem welcomeItem = new ToolStripMenuItem("Bienvenida y novedades…");
+            welcomeItem.Click += delegate { ShowWelcome(false); };
+            trayMenu.Items.Add(welcomeItem);
 
             startupItem = new ToolStripMenuItem("Iniciar con Windows");
             startupItem.CheckOnClick = true;
@@ -233,7 +246,7 @@ namespace Raudo
 
             if (showWindowAtStartup)
             {
-                ShowWindow();
+                ShowPrimaryWindow();
             }
         }
 
@@ -697,7 +710,7 @@ namespace Raudo
         {
             if (eventArgs.Button == MouseButtons.Left)
             {
-                ShowWindow();
+                ShowPrimaryWindow();
             }
         }
 
@@ -889,6 +902,11 @@ namespace Raudo
                     {
                         desktopGuideForm.ApplyTheme(current);
                     }
+
+                    if (welcomeForm != null)
+                    {
+                        welcomeForm.ApplyTheme(current);
+                    }
                 });
             }
         }
@@ -912,6 +930,13 @@ namespace Raudo
                     EnsureTransientWindowOnCurrentDesktop(
                         desktopGuideForm,
                         "Mostrar la guía de escritorios");
+                }
+
+                if (welcomeForm != null && welcomeForm.Visible)
+                {
+                    EnsureTransientWindowOnCurrentDesktop(
+                        welcomeForm,
+                        "Mostrar la bienvenida");
                 }
 
                 if (voiceOverlayForm != null)
@@ -946,6 +971,115 @@ namespace Raudo
             {
                 form.ShowFromTray();
             }
+        }
+
+        private void ShowPrimaryWindow()
+        {
+            if (IsWelcomePending())
+            {
+                ShowWelcome(true);
+            }
+            else
+            {
+                ShowWindow();
+            }
+        }
+
+        private bool IsWelcomePending()
+        {
+            return !string.Equals(
+                settings.LastWelcomeVersion,
+                currentVersion,
+                StringComparison.Ordinal);
+        }
+
+        private void ShowWelcome(bool automatic)
+        {
+            if (exiting)
+            {
+                return;
+            }
+
+            EnsureWelcomeForm();
+            if (!EnsureTransientWindowOnCurrentDesktop(
+                welcomeForm,
+                "Mostrar la bienvenida"))
+            {
+                return;
+            }
+
+            welcomeOpenedAutomatically = automatic;
+            welcomeForm.ShowWelcome();
+        }
+
+        private void EnsureWelcomeForm()
+        {
+            if (welcomeForm != null && !welcomeForm.IsDisposed)
+            {
+                return;
+            }
+
+            welcomeForm = new WelcomeForm(
+                idleIcon,
+                welcomeShowsChanges,
+                !InstallationService.IsCurrentExecutableInstalled());
+            welcomeForm.InstallRequested += WelcomeInstallRequested;
+            welcomeForm.Dismissed += WelcomeDismissed;
+            welcomeForm.ApplyTheme(ThemeService.Current());
+        }
+
+        private void WelcomeDismissed(object sender, EventArgs eventArgs)
+        {
+            MarkWelcomeSeen();
+            bool openMainWindow = welcomeOpenedAutomatically;
+            welcomeOpenedAutomatically = false;
+            DestroyWelcomeForm();
+            if (openMainWindow)
+            {
+                ShowWindow();
+            }
+        }
+
+        private void WelcomeInstallRequested(object sender, EventArgs eventArgs)
+        {
+            MarkWelcomeSeen();
+            InstallationResult result = InstallationService.InstallCurrentExecutable(false);
+            if (!result.Succeeded)
+            {
+                welcomeForm.ShowInstallFailure(result.Message);
+                return;
+            }
+
+            RestartAfterExitPath = result.InstalledExecutablePath;
+            ExitThread();
+        }
+
+        private void MarkWelcomeSeen()
+        {
+            if (string.Equals(
+                settings.LastWelcomeVersion,
+                currentVersion,
+                StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            settings.LastWelcomeVersion = currentVersion;
+            SaveSettings();
+        }
+
+        private void DestroyWelcomeForm()
+        {
+            if (welcomeForm == null)
+            {
+                return;
+            }
+
+            welcomeForm.InstallRequested -= WelcomeInstallRequested;
+            welcomeForm.Dismissed -= WelcomeDismissed;
+            welcomeForm.AllowCloseAndClose();
+            welcomeForm.Dispose();
+            welcomeForm = null;
         }
 
         private void ShowSalto()
@@ -1618,7 +1752,7 @@ namespace Raudo
 
         private void ShowRequestSignaled(object state, bool timedOut)
         {
-            RunOnUiThread(ShowWindow);
+            RunOnUiThread(ShowPrimaryWindow);
         }
 
         private void UpdatePresentation()
@@ -1865,6 +1999,11 @@ namespace Raudo
                 desktopGuideForm.AllowCloseAndClose();
                 desktopGuideForm.Dispose();
                 desktopGuideForm = null;
+            }
+
+            if (welcomeForm != null)
+            {
+                DestroyWelcomeForm();
             }
 
             DestroyMiniForm();

@@ -28,6 +28,7 @@ namespace Raudo
         public int SaltoTopY { get; set; }
         public int SaltoOpacityPercent { get; set; }
         public long PulseActiveUntilUtcTicks { get; set; }
+        public string LastWelcomeVersion { get; set; }
 
         public void Normalize()
         {
@@ -116,7 +117,10 @@ namespace Raudo
         {
             settingsPath = path;
             serializer = new JavaScriptSerializer();
+            HadStoredSettings = File.Exists(settingsPath);
         }
+
+        public bool HadStoredSettings { get; private set; }
 
         public RaudoSettings Load()
         {
@@ -184,11 +188,17 @@ namespace Raudo
 
         public static void SetEnabled(bool enabled)
         {
+            SetEnabledForExecutable(
+                enabled,
+                System.Reflection.Assembly.GetExecutingAssembly().Location);
+        }
+
+        internal static void SetEnabledForExecutable(bool enabled, string executable)
+        {
             using (RegistryKey key = Registry.CurrentUser.CreateSubKey(RunKeyPath))
             {
                 if (enabled)
                 {
-                    string executable = System.Reflection.Assembly.GetExecutingAssembly().Location;
                     key.SetValue(ValueName, "\"" + executable + "\" --background", RegistryValueKind.String);
                 }
                 else

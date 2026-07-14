@@ -6,7 +6,7 @@ on:
       version:
         description: Semantic version without the v prefix
         required: true
-        default: 1.8.4
+        default: 1.9.0
         type: string
 
 permissions:
@@ -27,10 +27,15 @@ jobs:
         shell: pwsh
         run: .\scripts\Package.ps1 -Version '${{ inputs.version }}'
 
-      - name: Attest package
+      - name: Attest portable package
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373
         with:
           subject-path: artifacts/Raudo-v${{ inputs.version }}-win.zip
+
+      - name: Attest direct executable
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373
+        with:
+          subject-path: artifacts/Raudo-v${{ inputs.version }}-win.exe
 
       - name: Upload candidate
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -39,5 +44,9 @@ jobs:
           path: |
             artifacts/Raudo-v${{ inputs.version }}-win.zip
             artifacts/Raudo-v${{ inputs.version }}-win.zip.sha256
+            artifacts/Raudo-v${{ inputs.version }}-win.exe
+            artifacts/Raudo-v${{ inputs.version }}-win.exe.sha256
+            artifacts/Raudo-win.exe
+            artifacts/Raudo-win.exe.sha256
           if-no-files-found: error
           retention-days: 14

@@ -4,6 +4,17 @@ Este proyecto utiliza versionado semántico.
 
 ## [Sin publicar]
 
+## [1.9.0] - 2026-07-14
+
+- Bienvenida visual para la primera ejecución y resumen de novedades después de actualizar, disponible nuevamente desde el menú de bandeja.
+- Recorrido animado y navegable por teclado que respeta tema, alto contraste, escala y preferencia de reducción de movimiento de Windows.
+- Instalación directa desde el mismo ejecutable en el perfil del usuario, sin elevación, servicios o procesos auxiliares.
+- Copia atómica con verificación SHA-256 y acceso nativo en el menú Inicio; el uso portable permanece disponible.
+- Restauración exacta del cursor después de cada pulso, incluso en posiciones que el movimiento absoluto de Windows redondea entre píxeles.
+- Interfaz de automatización limitada a instalación, apertura y acceso opcional en el escritorio, sin aceptar rutas ni comandos arbitrarios.
+- Ejecutable estable y ejecutable versionado publicados junto al ZIP, sus sumas SHA-256 y certificaciones de procedencia.
+- Validación ampliada para persistencia por versión, parámetros seguros, copia atómica, accesos de Windows, temas, escala y consumo de recursos.
+
 ## [1.8.4] - 2026-07-14
 
 - Órdenes de voz locales en español mediante `Ctrl + Alt + V`, activadas únicamente bajo demanda y limitadas a una gramática cerrada de acciones seguras.

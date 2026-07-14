@@ -279,6 +279,20 @@ namespace Raudo
             }
         }
 
+        protected override AccessibleObject CreateAccessibilityInstance()
+        {
+            return new RoundedButtonAccessibleObject(this);
+        }
+
+        private void PerformAccessibleClick()
+        {
+            if (Enabled)
+            {
+                Focus();
+                OnClick(EventArgs.Empty);
+            }
+        }
+
         protected override void OnMouseEnter(EventArgs eventArgs)
         {
             pointerOver = true;
@@ -401,6 +415,51 @@ namespace Raudo
             {
                 Rectangle focus = Rectangle.Inflate(bounds, -4, -4);
                 ControlPaint.DrawFocusRectangle(eventArgs.Graphics, focus, FocusColor, fill);
+            }
+        }
+
+        private sealed class RoundedButtonAccessibleObject : ControlAccessibleObject
+        {
+            private readonly RoundedButton owner;
+
+            public RoundedButtonAccessibleObject(RoundedButton button)
+                : base(button)
+            {
+                owner = button;
+            }
+
+            public override AccessibleRole Role
+            {
+                get { return AccessibleRole.PushButton; }
+            }
+
+            public override AccessibleStates State
+            {
+                get
+                {
+                    AccessibleStates state = base.State | AccessibleStates.Focusable;
+                    if (owner.Focused)
+                    {
+                        state |= AccessibleStates.Focused;
+                    }
+
+                    if (!owner.Enabled)
+                    {
+                        state |= AccessibleStates.Unavailable;
+                    }
+
+                    return state;
+                }
+            }
+
+            public override string DefaultAction
+            {
+                get { return "Presionar"; }
+            }
+
+            public override void DoDefaultAction()
+            {
+                owner.PerformAccessibleClick();
             }
         }
 

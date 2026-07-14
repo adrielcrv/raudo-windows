@@ -13,6 +13,20 @@ Raudo reúne utilidades locales y ligeras para Windows en una aplicación de ban
   <img src="docs/raudo-dark.png" width="520" alt="Interfaz de Raudo en modo oscuro">
 </p>
 
+## Instalar
+
+1. Descarga [Raudo para Windows](https://github.com/adrielcrv/raudo-windows/releases/latest/download/Raudo-win.exe).
+2. Abre el archivo descargado.
+3. Selecciona **Instalar en esta PC** en la bienvenida.
+
+Raudo se instala únicamente para el usuario actual, crea un acceso en el menú
+Inicio y no solicita permisos de administrador. El mismo ejecutable puede usarse
+sin instalar; el [ZIP portable](https://github.com/adrielcrv/raudo-windows/releases/latest)
+continúa disponible en cada publicación.
+
+Consulta [Instalación y automatización](docs/INSTALL.md) para verificar la suma
+SHA-256 o realizar una instalación no interactiva.
+
 ## Funciones
 
 ### Pulso
@@ -106,6 +120,18 @@ La detección de ventanas utiliza la interfaz pública `IVirtualDesktopManager`.
 Raudo no incluye telemetría, cuentas ni publicidad. Las búsquedas de Salto permanecen en memoria y se utilizan únicamente para filtrar resultados o producir un cálculo o conversión local; sólo se guardan la posición y el nivel de opacidad elegidos. El catálogo de aplicaciones se consulta a Windows bajo demanda; Raudo no recorre el disco ni conserva las consultas. Un resultado sólo se escribe en el portapapeles después de seleccionarlo. Las órdenes de voz utilizan una gramática local y sólo existen durante la sesión de escucha iniciada por el usuario. Los controles multimedia automáticos envían comandos fijos; al abrir el selector de Mini, Raudo consulta localmente las sesiones que Windows expone y conserva de forma transitoria el nombre de la aplicación y su estado. Raudo sólo se conecta directamente a Internet cuando el usuario selecciona **Buscar actualizaciones**. Las acciones de YouTube o clima abren el navegador predeterminado, que administra su propia conexión. En una instalación local, Raudo puede descargar el paquete oficial después de una confirmación, validar su versión y sus sumas SHA-256, reemplazar el ejecutable de forma atómica y reiniciarse. Una copia portable abre la publicación para actualización manual.
 
 Consulta [PRIVACY.md](PRIVACY.md) para conocer los datos locales y el comportamiento de red.
+
+## Bienvenida y novedades
+
+Raudo muestra una guía breve la primera vez que se abre y después de instalar una
+versión con funciones nuevas. La guía presenta los accesos esenciales, respeta la
+preferencia de animaciones de Windows y no mantiene trabajo en segundo plano al
+cerrarse. Puede abrirse nuevamente desde **Bienvenida y novedades** en el menú del
+icono junto al reloj.
+
+<p align="center">
+  <img src="docs/raudo-welcome-dark.png" width="620" alt="Bienvenida de Raudo en modo oscuro">
+</p>
 
 ## Requisitos
 
