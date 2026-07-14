@@ -1709,7 +1709,17 @@ internal static class TestRunner
                 == VoiceCommandKind.Unknown,
             "Un alias compartido eligió una aplicación sin confirmación.");
 
-        string grammar = VoiceGrammarBuilder.BuildSrgs();
+        string grammar = VoiceGrammarBuilder.BuildSrgs("es-MX");
+        string spanishSpainGrammar = VoiceGrammarBuilder.BuildSrgs("es-ES");
+        Assert(
+            grammar.IndexOf("xml:lang=\"es-MX\"", StringComparison.Ordinal) >= 0
+                && spanishSpainGrammar.IndexOf(
+                    "xml:lang=\"es-ES\"",
+                    StringComparison.Ordinal) >= 0
+                && spanishSpainGrammar.IndexOf(
+                    "xml:lang=\"es-MX\"",
+                    StringComparison.Ordinal) < 0,
+            "La gramática no conserva el idioma del reconocedor seleccionado.");
         Assert(
             grammar.IndexOf("SpeechRecognitionTopicConstraint", StringComparison.OrdinalIgnoreCase) < 0
                 && grammar.IndexOf("webSearch", StringComparison.OrdinalIgnoreCase) < 0

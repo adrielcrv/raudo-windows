@@ -180,7 +180,7 @@ namespace Raudo
                 recognizer.Timeouts.BabbleTimeout = TimeSpan.FromSeconds(4);
                 recognizer.Timeouts.EndSilenceTimeout = TimeSpan.FromMilliseconds(900);
 
-                string grammarPath = EnsureGrammarFile();
+                string grammarPath = EnsureGrammarFile(language.LanguageTag);
                 StorageFile grammarFile = await StorageFile
                     .GetFileFromPathAsync(grammarPath)
                     .AsTask(localCancellation.Token);
@@ -356,7 +356,7 @@ namespace Raudo
             using (SpeechRecognizer recognizer = new SpeechRecognizer(language))
             {
                 StorageFile grammarFile = await StorageFile
-                    .GetFileFromPathAsync(EnsureGrammarFile())
+                    .GetFileFromPathAsync(EnsureGrammarFile(language.LanguageTag))
                     .AsTask();
                 recognizer.Constraints.Add(
                     new SpeechRecognitionGrammarFileConstraint(grammarFile));
@@ -405,15 +405,17 @@ namespace Raudo
             return fallback;
         }
 
-        private static string EnsureGrammarFile()
+        private static string EnsureGrammarFile(string languageTag)
         {
             string directory = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "Raudo",
                 "voice");
             Directory.CreateDirectory(directory);
-            string path = Path.Combine(directory, "commands-es-MX.srgs.xml");
-            string content = VoiceGrammarBuilder.BuildSrgs();
+            string path = Path.Combine(
+                directory,
+                "commands-" + GetSafeLanguageTag(languageTag) + ".srgs.xml");
+            string content = VoiceGrammarBuilder.BuildSrgs(languageTag);
             bool write = true;
             try
             {
@@ -443,6 +445,25 @@ namespace Raudo
             }
 
             return path;
+        }
+
+        private static string GetSafeLanguageTag(string languageTag)
+        {
+            StringBuilder safeTag = new StringBuilder(languageTag.Length);
+            foreach (char character in languageTag)
+            {
+                if (char.IsLetterOrDigit(character) || character == '-')
+                {
+                    safeTag.Append(character);
+                }
+            }
+
+            if (safeTag.Length == 0)
+            {
+                throw new ArgumentException("El idioma de voz no es válido.", "languageTag");
+            }
+
+            return safeTag.ToString();
         }
 
         private static VoiceRecognitionOutcome MapResultStatus(

@@ -15,7 +15,7 @@ El mismo archivo conserva si Modo Mini está activo, su posición, la posición 
 La gramática fija utilizada por la función de voz se prepara en:
 
 ```text
-%LOCALAPPDATA%\Raudo\voice\commands-es-MX.srgs.xml
+%LOCALAPPDATA%\Raudo\voice\commands-<idioma>.srgs.xml
 ```
 
 Este archivo contiene únicamente las órdenes incluidas con Raudo. No incorpora frases pronunciadas, grabaciones, consultas o nombres de aplicaciones instaladas.

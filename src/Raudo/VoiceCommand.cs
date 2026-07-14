@@ -570,11 +570,18 @@ namespace Raudo
             "terabytes"
         };
 
-        public static string BuildSrgs()
+        public static string BuildSrgs(string languageTag)
         {
+            if (string.IsNullOrWhiteSpace(languageTag))
+            {
+                throw new ArgumentException("Se requiere un idioma para la gramática.", "languageTag");
+            }
+
             StringBuilder xml = new StringBuilder(50000);
             xml.Append("<?xml version=\"1.0\" encoding=\"utf-8\"?>");
-            xml.Append("<grammar version=\"1.0\" xml:lang=\"es-MX\" root=\"command\"");
+            xml.Append("<grammar version=\"1.0\" xml:lang=\"");
+            xml.Append(SecurityElement.Escape(languageTag));
+            xml.Append("\" root=\"command\"");
             xml.Append(" xmlns=\"http://www.w3.org/2001/06/grammar\">");
             xml.Append("<rule id=\"command\" scope=\"public\"><item>");
             xml.Append("<item repeat=\"0-1\">raudo</item><one-of>");
