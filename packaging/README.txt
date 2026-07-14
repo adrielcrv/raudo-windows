@@ -5,7 +5,8 @@ Utilidades locales y ligeras para Windows.
 USO
 
 1. Ejecuta Raudo.exe.
-2. Presiona Ctrl + Alt + Espacio para abrir Salto y buscar una acción.
+2. Presiona Ctrl + Alt + Espacio para abrir Salto y buscar una ventana,
+   aplicación o acción.
 3. Elige una duración e inicia Pulso cuando lo necesites.
 4. Cierra la ventana para conservar Raudo junto al reloj.
 5. Activa Modo Mini para navegar entre escritorios y traer ventanas.
@@ -13,10 +14,12 @@ USO
 
 SALTO
 
-Salto busca únicamente dentro del catálogo local de Raudo. Permite controlar
-Pulso, abrir Recortes, mostrar la ventana principal, controlar Modo Mini y
-cambiar entre los escritorios disponibles. Si Ctrl + Alt + Espacio ya pertenece
-a otra aplicación, Salto permanece disponible desde la bandeja.
+Salto busca ventanas abiertas, aplicaciones registradas por Windows y acciones
+locales de Raudo. Una ventana abierta aparece antes que la opción de iniciar otra
+instancia y puede enfocarse o traerse desde otro escritorio. El catálogo de
+aplicaciones se prepara una vez por sesión y bajo demanda. Raudo no recorre el
+disco ni conserva las consultas. Si Ctrl + Alt + Espacio ya pertenece a otra
+aplicación, Salto permanece disponible desde la bandeja.
 
 MODO MINI
 

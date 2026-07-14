@@ -24,6 +24,12 @@ Durante una actualización confirmada, los archivos temporales se guardan en:
 
 La copia anterior del ejecutable se conserva únicamente durante el reinicio y después se elimina.
 
+## Datos transitorios de Salto
+
+Cuando Salto se abre, Raudo consulta los títulos de las ventanas visibles y el catálogo de aplicaciones registrado por Windows. Los nombres, identificadores y la consulta escrita se conservan únicamente en memoria durante la sesión necesaria para mostrar y filtrar resultados.
+
+Raudo no lee el contenido de las ventanas, no recorre ni indexa archivos, no conserva el texto de búsqueda y no envía estos datos por la red. El catálogo de aplicaciones se prepara bajo demanda como máximo una vez por proceso.
+
 ## Conexiones de red
 
 Raudo no realiza conexiones automáticas. Al seleccionar **Buscar actualizaciones**, envía una solicitud HTTPS a la API pública de GitHub para consultar la última publicación de `adrielcrv/raudo-windows`.

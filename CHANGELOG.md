@@ -4,6 +4,15 @@ Este proyecto utiliza versionado semántico.
 
 ## [Sin publicar]
 
+## [1.3.0] - 2026-07-13
+
+- Salto ahora encuentra ventanas abiertas por título o aplicación y distingue el escritorio actual de otro escritorio.
+- Una ventana existente tiene prioridad sobre iniciar otra instancia y puede enfocarse o traerse al escritorio actual.
+- Búsqueda de aplicaciones instaladas mediante el catálogo de aplicaciones de Windows, cargado una vez y bajo demanda.
+- Vista inicial limitada a las acciones de Raudo y máximo acotado de resultados durante una búsqueda.
+- Nuevos estados de preparación, ausencia de resultados y error de ejecución sin historial de consultas.
+- Validación ampliada para aplicaciones, ventanas actuales y externas, escalado y consumo de recursos.
+
 ## [1.2.0] - 2026-07-13
 
 - Nuevo lanzador Salto para buscar y ejecutar acciones locales con `Ctrl + Alt + Espacio`.
