@@ -26,6 +26,11 @@ namespace Raudo
         public bool Enabled { get; private set; }
     }
 
+    internal sealed class MinimizeRequestedEventArgs : EventArgs
+    {
+        public bool Handled { get; set; }
+    }
+
     internal sealed class MainForm : Form
     {
         private readonly KeepActiveService keepActiveService;
@@ -115,7 +120,7 @@ namespace Raudo
             Controls.Add(primaryCard);
 
             featureTitleLabel = CreateLabel(
-                "Mantener activo",
+                "Pulso",
                 14F,
                 FontStyle.Bold,
                 new Point(22, 18),
@@ -126,7 +131,7 @@ namespace Raudo
             statusPill.Font = new Font("Segoe UI Semibold", 8.5F, FontStyle.Bold, GraphicsUnit.Point);
             statusPill.Location = new Point(362, 19);
             statusPill.Size = new Size(100, 28);
-            statusPill.AccessibleName = "Estado de Mantener activo";
+            statusPill.AccessibleName = "Estado de Pulso";
             primaryCard.Controls.Add(statusPill);
 
             descriptionLabel = CreateLabel(
@@ -149,7 +154,7 @@ namespace Raudo
             durationSelector.Font = new Font("Segoe UI", 10F, FontStyle.Regular, GraphicsUnit.Point);
             durationSelector.Location = new Point(23, 117);
             durationSelector.Size = new Size(438, 36);
-            durationSelector.AccessibleName = "Duración de Mantener activo";
+            durationSelector.AccessibleName = "Duración de Pulso";
             durationSelector.SelectionChanged += DurationSelectorChanged;
             primaryCard.Controls.Add(durationSelector);
 
@@ -158,12 +163,12 @@ namespace Raudo
             toggleButton.Font = new Font("Segoe UI Semibold", 10.5F, FontStyle.Bold, GraphicsUnit.Point);
             toggleButton.Location = new Point(23, 166);
             toggleButton.Size = new Size(438, 48);
-            toggleButton.AccessibleName = "Activar Mantener activo";
+            toggleButton.AccessibleName = "Iniciar Pulso";
             toggleButton.Click += delegate { OnToggleRequested(); };
             primaryCard.Controls.Add(toggleButton);
 
             countdownLabel = CreateLabel(
-                "Listo para activar",
+                "Pulso listo",
                 9F,
                 FontStyle.Bold,
                 new Point(23, 231),
@@ -312,6 +317,8 @@ namespace Raudo
         public event EventHandler ScreenCaptureRequested;
         public event EventHandler<StartupChangedEventArgs> StartupChanged;
         public event EventHandler<MiniModeChangedEventArgs> MiniModeChanged;
+        public event EventHandler<MinimizeRequestedEventArgs> MinimizeRequested;
+        public event EventHandler UpdateRestartRequested;
 
         public void SelectDuration(int minutes)
         {
@@ -387,9 +394,11 @@ namespace Raudo
             bool active = keepActiveService.IsActive;
             durationSelector.Enabled = !active;
             toggleButton.Text = active
-                ? "Detener"
-                : "Activar por " + DurationOption.GetLabel(settings.DurationMinutes).ToLowerInvariant();
-            toggleButton.AccessibleName = active ? "Detener Mantener activo" : toggleButton.Text;
+                ? "Detener Pulso"
+                : "Iniciar por " + DurationOption.GetLabel(settings.DurationMinutes).ToLowerInvariant();
+            toggleButton.AccessibleName = active
+                ? "Detener Pulso"
+                : "Iniciar Pulso por " + DurationOption.GetLabel(settings.DurationMinutes).ToLowerInvariant();
             toggleButton.NormalColor = active ? palette.Danger : palette.Primary;
             toggleButton.HoverColor = active ? palette.DangerHover : palette.PrimaryHover;
             statusPill.SetState(active, palette);
@@ -400,7 +409,7 @@ namespace Raudo
                 countdownLabel.Text = "Restante  " + FormatClock(remaining);
                 detailLabel.Text = keepActiveService.PulseCount == 0
                     ? "Actúa después de 45 s sin entrada"
-                    : string.Format("Pulsos mínimos: {0}", keepActiveService.PulseCount);
+                    : string.Format("Entradas mínimas: {0}", keepActiveService.PulseCount);
             }
             else
             {
@@ -443,6 +452,11 @@ namespace Raudo
             Close();
         }
 
+        public void HideToTrayImmediately()
+        {
+            HideToTray();
+        }
+
         protected override void OnHandleCreated(EventArgs eventArgs)
         {
             base.OnHandleCreated(eventArgs);
@@ -450,6 +464,30 @@ namespace Raudo
             {
                 WindowTheme.Apply(Handle, palette.IsDark);
             }
+        }
+
+        protected override void WndProc(ref Message message)
+        {
+            const int windowSystemCommand = 0x0112;
+            const int minimizeCommand = 0xF020;
+            if (!allowClose
+                && message.Msg == windowSystemCommand
+                && ((int)message.WParam & 0xFFF0) == minimizeCommand)
+            {
+                MinimizeRequestedEventArgs eventArgs = new MinimizeRequestedEventArgs();
+                EventHandler<MinimizeRequestedEventArgs> handler = MinimizeRequested;
+                if (handler != null)
+                {
+                    handler(this, eventArgs);
+                }
+
+                if (eventArgs.Handled)
+                {
+                    return;
+                }
+            }
+
+            base.WndProc(ref message);
         }
 
         protected override void Dispose(bool disposing)
@@ -575,9 +613,49 @@ namespace Raudo
 
             if (result.IsAvailable)
             {
+                if (result.CanInstall)
+                {
+                    DialogResult installChoice = MessageBox.Show(
+                        this,
+                        result.Message
+                            + "\n\n¿Quieres descargarla e instalarla ahora? "
+                            + "Raudo verificará el paquete y se reiniciará.",
+                        "Actualización disponible",
+                        MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Information);
+                    if (installChoice == DialogResult.Yes)
+                    {
+                        updateLink.Enabled = false;
+                        updateLink.Text = "Preparando actualización…";
+                        UpdateInstallResult install = await UpdateService.InstallAsync(result);
+                        if (install.Started)
+                        {
+                            EventHandler restartHandler = UpdateRestartRequested;
+                            if (restartHandler != null)
+                            {
+                                restartHandler(this, EventArgs.Empty);
+                            }
+
+                            return;
+                        }
+
+                        updateLink.Text = previousText;
+                        updateLink.Enabled = true;
+                        MessageBox.Show(
+                            this,
+                            install.Message,
+                            "No se pudo actualizar Raudo",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Warning);
+                    }
+
+                    return;
+                }
+
                 DialogResult choice = MessageBox.Show(
                     this,
-                    result.Message + "\n\n¿Quieres abrir la página oficial de la versión?",
+                    result.Message
+                        + "\n\nEsta copia es portable. ¿Quieres abrir la página oficial para descargarla?",
                     "Actualización disponible",
                     MessageBoxButtons.YesNo,
                     MessageBoxIcon.Information);

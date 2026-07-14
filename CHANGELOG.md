@@ -4,6 +4,16 @@ Este proyecto utiliza versionado semántico.
 
 ## [Sin publicar]
 
+## [1.1.0] - 2026-07-13
+
+- Nuevo nombre Pulso para la función de disponibilidad temporal y sus recordatorios.
+- Actualización confirmada desde la aplicación con validación de versión y sumas SHA-256.
+- Transición conectada de la ventana principal hacia Modo Mini al minimizar.
+- Indicadores independientes para sesión activa, últimos 15 minutos, últimos 5 minutos y finalización.
+- Recordatorios progresivos que respetan pantalla completa, presentaciones y el estado de notificaciones de Windows.
+- Opacidad adaptativa de Mini con transiciones breves y sin trabajo continuo de animación.
+- Rediseño del estado recogido, la marca y las transiciones de Modo Mini.
+
 ## [1.0.1] - 2026-07-13
 
 - Seguimiento automático de Raudo Mini en el escritorio activo.

@@ -18,4 +18,4 @@ Cada publicación requiere aprobación manual. Los workflows no publican version
 
 ## Privacidad
 
-Raudo no transfiere información a otros sistemas salvo cuando el usuario solicita explícitamente comprobar actualizaciones. El comportamiento completo se describe en [PRIVACY.md](PRIVACY.md).
+Raudo no transfiere información a otros sistemas salvo cuando el usuario solicita explícitamente comprobar o instalar una actualización. El comportamiento completo se describe en [PRIVACY.md](PRIVACY.md).

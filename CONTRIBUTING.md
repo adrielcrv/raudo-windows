@@ -14,7 +14,7 @@ cd raudo-windows
 
 - Mantén cada cambio limitado a un propósito verificable.
 - Conserva el comportamiento local, visible y sin privilegios de administrador.
-- No añadas telemetría, ejecución arbitraria, listeners de red ni descargas automáticas.
+- No añadas telemetría, ejecución arbitraria, listeners de red ni descargas sin confirmación y validación criptográfica.
 - Añade o actualiza pruebas cuando cambie el comportamiento.
 - Ejecuta las pruebas de integración si modificas entrada, energía, sesión o APIs nativas.
 - Ejecuta `Raudo.Tests.exe --desktop-integration` si modificas escritorios virtuales; la prueba requiere al menos dos escritorios y restaura el escritorio original.

@@ -122,6 +122,64 @@ namespace Raudo
         }
     }
 
+    internal static class MotionSettings
+    {
+        private const uint GetClientAreaAnimation = 0x1042;
+
+        public static bool ClientAreaAnimationsEnabled()
+        {
+            bool enabled;
+            try
+            {
+                return NativeMethods.SystemParametersInfo(
+                    GetClientAreaAnimation,
+                    0,
+                    out enabled,
+                    0)
+                    ? enabled
+                    : true;
+            }
+            catch (EntryPointNotFoundException)
+            {
+                return true;
+            }
+        }
+    }
+
+    internal enum UserNotificationState
+    {
+        NotPresent = 1,
+        Busy = 2,
+        RunningDirect3DFullScreen = 3,
+        PresentationMode = 4,
+        AcceptsNotifications = 5,
+        QuietTime = 6,
+        WindowsApp = 7
+    }
+
+    internal static class ShellUserState
+    {
+        public static UserNotificationState Current()
+        {
+            UserNotificationState state;
+            return NativeMethods.SHQueryUserNotificationState(out state) == 0
+                ? state
+                : UserNotificationState.AcceptsNotifications;
+        }
+
+        public static bool IsImmersive(UserNotificationState state)
+        {
+            return state == UserNotificationState.Busy
+                || state == UserNotificationState.RunningDirect3DFullScreen
+                || state == UserNotificationState.PresentationMode;
+        }
+
+        public static bool AcceptsNotifications(UserNotificationState state)
+        {
+            return state == UserNotificationState.AcceptsNotifications;
+        }
+    }
+
     internal static class NativeMethods
     {
         [StructLayout(LayoutKind.Sequential)]
@@ -204,6 +262,18 @@ namespace Raudo
         [DllImport("user32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool SetProcessDPIAware();
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool SystemParametersInfo(
+            uint action,
+            uint parameter,
+            [MarshalAs(UnmanagedType.Bool)] out bool value,
+            uint updateFlags);
+
+        [DllImport("shell32.dll")]
+        internal static extern int SHQueryUserNotificationState(
+            out UserNotificationState state);
 
         [DllImport("dwmapi.dll")]
         internal static extern int DwmSetWindowAttribute(

@@ -65,7 +65,7 @@ internal static class GenerateAssets
             size * 0.26F))
         using (SolidBrush fill = new SolidBrush(Color.FromArgb(37, 99, 235)))
         using (GraphicsPath mark = CreateMark(size))
-        using (Pen stroke = new Pen(Color.White, Math.Max(2F, size * 0.113F)))
+        using (Pen stroke = new Pen(Color.White, Math.Max(1.5F, size * 0.104F)))
         using (MemoryStream stream = new MemoryStream())
         {
             graphics.SmoothingMode = SmoothingMode.AntiAlias;
@@ -83,24 +83,24 @@ internal static class GenerateAssets
 
     private static GraphicsPath CreateMark(int size)
     {
-        float scale = size / 256F;
+        float scale = size / 48F;
         GraphicsPath path = new GraphicsPath();
         path.StartFigure();
-        path.AddLine(85F * scale, 205F * scale, 85F * scale, 65F * scale);
-        path.AddLine(85F * scale, 65F * scale, 133F * scale, 65F * scale);
+        path.AddLine(14F * scale, 38F * scale, 14F * scale, 10F * scale);
+        path.AddLine(14F * scale, 10F * scale, 24F * scale, 10F * scale);
         path.AddBezier(
-            133F * scale, 65F * scale,
-            169F * scale, 65F * scale,
-            189F * scale, 84F * scale,
-            189F * scale, 113F * scale);
+            24F * scale, 10F * scale,
+            31.5F * scale, 10F * scale,
+            35F * scale, 14.5F * scale,
+            35F * scale, 21F * scale);
         path.AddBezier(
-            189F * scale, 113F * scale,
-            189F * scale, 142F * scale,
-            169F * scale, 161F * scale,
-            133F * scale, 161F * scale);
-        path.AddLine(133F * scale, 161F * scale, 85F * scale, 161F * scale);
+            35F * scale, 21F * scale,
+            35F * scale, 27.5F * scale,
+            31.5F * scale, 32F * scale,
+            24F * scale, 32F * scale);
+        path.AddLine(24F * scale, 32F * scale, 14F * scale, 32F * scale);
         path.StartFigure();
-        path.AddLine(133F * scale, 161F * scale, 198F * scale, 209F * scale);
+        path.AddLine(24F * scale, 32F * scale, 35F * scale, 39F * scale);
         return path;
     }
 

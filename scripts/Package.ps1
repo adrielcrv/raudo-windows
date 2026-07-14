@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = '1.0.1',
+    [string]$Version = '1.1.0',
     [switch]$SkipBuild
 )
 
@@ -24,6 +24,11 @@ if (-not $SkipBuild) {
 
 if (-not (Test-Path -LiteralPath $sourceExe)) {
     throw "No existe el ejecutable esperado: $sourceExe"
+}
+
+$assemblyVersion = [Reflection.AssemblyName]::GetAssemblyName($sourceExe).Version.ToString(3)
+if (-not [string]::Equals($assemblyVersion, $Version, [StringComparison]::Ordinal)) {
+    throw "La versión del ejecutable ($assemblyVersion) no coincide con el paquete solicitado ($Version)."
 }
 
 if (Test-Path -LiteralPath $stagingPath) {

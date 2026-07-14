@@ -15,7 +15,7 @@ Raudo reúne utilidades locales y ligeras para Windows en una aplicación de ban
 
 ## Funciones
 
-### Mantener activo
+### Pulso
 
 - Evita temporalmente que el sistema y la pantalla entren en reposo.
 - Genera una entrada mínima únicamente después de 45 segundos sin actividad.
@@ -30,15 +30,19 @@ Abre la Herramienta Recortes mediante el protocolo `ms-screenclip` incluido en W
 
 ### Modo Mini
 
-- Se recoge como una pestaña estrecha parcialmente oculta en el borde de la pantalla.
+- Se recoge como un control de borde compacto que permanece visible sin invadir el contenido.
+- Se revela y se recoge con una transición breve que respeta la preferencia de animaciones de Windows.
+- Al minimizar la ventana principal, una transición conectada confirma visualmente su llegada a Mini.
 - Sigue automáticamente al escritorio activo y permanece siempre encima.
+- Reduce su presencia durante pantalla completa y presentaciones, sin perder el área de interacción.
 - Muestra únicamente las direcciones de escritorio que están disponibles.
 - Consulta las ventanas de otros escritorios únicamente al abrir el selector.
 - Permite traer una ventana elegida al escritorio actual sin cerrarla.
 - Recuerda el borde y la altura elegidos; puede ocultarse desde la propia pestaña o la bandeja.
+- Indica el estado de la sesión sin alterar el azul de marca y recuerda los umbrales de 15 y 5 minutos.
 
 <p align="center">
-  <img src="docs/raudo-mini-dark.png" width="156" alt="Modo Mini de Raudo">
+  <img src="docs/raudo-mini-dark.png" width="144" alt="Modo Mini de Raudo">
 </p>
 
 Raudo solicita a Windows que muestre únicamente su pestaña Mini en todos los escritorios. No modifica la configuración global de Vista de tareas. Si una versión de Windows no permite el anclaje automático, Raudo conserva como alternativa la configuración manual mediante `Win + Tab`.
@@ -47,7 +51,7 @@ La detección de ventanas utiliza la interfaz pública `IVirtualDesktopManager`.
 
 ## Privacidad y red
 
-Raudo no incluye telemetría, cuentas ni publicidad. Sólo se conecta a Internet cuando el usuario selecciona **Buscar actualizaciones**. Esa acción consulta la publicación oficial de GitHub y nunca descarga ni ejecuta archivos automáticamente.
+Raudo no incluye telemetría, cuentas ni publicidad. Sólo se conecta a Internet cuando el usuario selecciona **Buscar actualizaciones**. En una instalación local, puede descargar el paquete oficial después de una confirmación, validar su versión y sus sumas SHA-256, reemplazar el ejecutable de forma atómica y reiniciarse. Una copia portable abre la publicación para actualización manual.
 
 Consulta [PRIVACY.md](PRIVACY.md) para conocer los datos locales y el comportamiento de red.
 

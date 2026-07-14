@@ -9,42 +9,61 @@ namespace Raudo
     {
         public static void DrawMark(Graphics graphics, Rectangle bounds, Color background, Color foreground)
         {
-            graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            using (GraphicsPath tile = DrawingPaths.RoundedRectangle(bounds, Math.Max(2, bounds.Width / 4)))
-            using (SolidBrush fill = new SolidBrush(background))
-            using (GraphicsPath mark = CreateMark(bounds))
-            using (Pen stroke = new Pen(foreground, Math.Max(2F, bounds.Width * 0.113F)))
+            GraphicsState state = graphics.Save();
+            try
             {
-                graphics.FillPath(fill, tile);
-                stroke.StartCap = LineCap.Round;
-                stroke.EndCap = LineCap.Round;
-                stroke.LineJoin = LineJoin.Round;
-                graphics.DrawPath(stroke, mark);
+                graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                int side = Math.Min(bounds.Width, bounds.Height);
+                Rectangle square = new Rectangle(
+                    bounds.Left + (bounds.Width - side) / 2,
+                    bounds.Top + (bounds.Height - side) / 2,
+                    side,
+                    side);
+                using (GraphicsPath tile = DrawingPaths.RoundedRectangle(
+                    square,
+                    Math.Max(2, side / 4)))
+                using (SolidBrush fill = new SolidBrush(background))
+                using (GraphicsPath mark = CreateMark(square))
+                using (Pen stroke = new Pen(
+                    foreground,
+                    Math.Max(1.5F, side * 0.104F)))
+                {
+                    graphics.FillPath(fill, tile);
+                    stroke.StartCap = LineCap.Round;
+                    stroke.EndCap = LineCap.Round;
+                    stroke.LineJoin = LineJoin.Round;
+                    graphics.DrawPath(stroke, mark);
+                }
+            }
+            finally
+            {
+                graphics.Restore(state);
             }
         }
 
         private static GraphicsPath CreateMark(Rectangle bounds)
         {
-            float scale = bounds.Width / 256F;
+            float scale = bounds.Width / 48F;
             float left = bounds.Left;
             float top = bounds.Top;
             GraphicsPath path = new GraphicsPath();
             path.StartFigure();
-            path.AddLine(left + (85F * scale), top + (205F * scale), left + (85F * scale), top + (65F * scale));
-            path.AddLine(left + (85F * scale), top + (65F * scale), left + (133F * scale), top + (65F * scale));
+            path.AddLine(left + (14F * scale), top + (38F * scale), left + (14F * scale), top + (10F * scale));
+            path.AddLine(left + (14F * scale), top + (10F * scale), left + (24F * scale), top + (10F * scale));
             path.AddBezier(
-                left + (133F * scale), top + (65F * scale),
-                left + (169F * scale), top + (65F * scale),
-                left + (189F * scale), top + (84F * scale),
-                left + (189F * scale), top + (113F * scale));
+                left + (24F * scale), top + (10F * scale),
+                left + (31.5F * scale), top + (10F * scale),
+                left + (35F * scale), top + (14.5F * scale),
+                left + (35F * scale), top + (21F * scale));
             path.AddBezier(
-                left + (189F * scale), top + (113F * scale),
-                left + (189F * scale), top + (142F * scale),
-                left + (169F * scale), top + (161F * scale),
-                left + (133F * scale), top + (161F * scale));
-            path.AddLine(left + (133F * scale), top + (161F * scale), left + (85F * scale), top + (161F * scale));
+                left + (35F * scale), top + (21F * scale),
+                left + (35F * scale), top + (27.5F * scale),
+                left + (31.5F * scale), top + (32F * scale),
+                left + (24F * scale), top + (32F * scale));
+            path.AddLine(left + (24F * scale), top + (32F * scale), left + (14F * scale), top + (32F * scale));
             path.StartFigure();
-            path.AddLine(left + (133F * scale), top + (161F * scale), left + (198F * scale), top + (209F * scale));
+            path.AddLine(left + (24F * scale), top + (32F * scale), left + (35F * scale), top + (39F * scale));
             return path;
         }
     }
@@ -61,6 +80,68 @@ namespace Raudo
             path.AddArc(bounds.Left, bounds.Bottom - diameter, diameter, diameter, 90F, 90F);
             path.CloseFigure();
             return path;
+        }
+
+        public static GraphicsPath RoundedRectangle(
+            Rectangle bounds,
+            float topLeftRadius,
+            float topRightRadius,
+            float bottomRightRadius,
+            float bottomLeftRadius)
+        {
+            RectangleF area = new RectangleF(
+                bounds.Left,
+                bounds.Top,
+                Math.Max(1, bounds.Width),
+                Math.Max(1, bounds.Height));
+            float maximumRadius = Math.Min(area.Width, area.Height) / 2F;
+            float topLeft = Math.Max(0F, Math.Min(maximumRadius, topLeftRadius));
+            float topRight = Math.Max(0F, Math.Min(maximumRadius, topRightRadius));
+            float bottomRight = Math.Max(0F, Math.Min(maximumRadius, bottomRightRadius));
+            float bottomLeft = Math.Max(0F, Math.Min(maximumRadius, bottomLeftRadius));
+
+            GraphicsPath path = new GraphicsPath();
+            path.StartFigure();
+            path.AddLine(area.Left + topLeft, area.Top, area.Right - topRight, area.Top);
+            AddCorner(path, area.Right - (topRight * 2F), area.Top, topRight, 270F);
+            path.AddLine(area.Right, area.Top + topRight, area.Right, area.Bottom - bottomRight);
+            AddCorner(
+                path,
+                area.Right - (bottomRight * 2F),
+                area.Bottom - (bottomRight * 2F),
+                bottomRight,
+                0F);
+            path.AddLine(
+                area.Right - bottomRight,
+                area.Bottom,
+                area.Left + bottomLeft,
+                area.Bottom);
+            AddCorner(
+                path,
+                area.Left,
+                area.Bottom - (bottomLeft * 2F),
+                bottomLeft,
+                90F);
+            path.AddLine(area.Left, area.Bottom - bottomLeft, area.Left, area.Top + topLeft);
+            AddCorner(path, area.Left, area.Top, topLeft, 180F);
+            path.CloseFigure();
+            return path;
+        }
+
+        private static void AddCorner(
+            GraphicsPath path,
+            float x,
+            float y,
+            float radius,
+            float startAngle)
+        {
+            if (radius <= 0F)
+            {
+                return;
+            }
+
+            float diameter = radius * 2F;
+            path.AddArc(x, y, diameter, diameter, startAngle, 90F);
         }
     }
 

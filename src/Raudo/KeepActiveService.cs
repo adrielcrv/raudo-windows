@@ -5,9 +5,30 @@ using System.Windows.Forms;
 
 namespace Raudo
 {
+    internal enum KeepActivePhase
+    {
+        Inactive,
+        Active,
+        EndingSoon,
+        Critical,
+        Completed
+    }
+
+    internal sealed class KeepActiveAttentionEventArgs : EventArgs
+    {
+        public KeepActiveAttentionEventArgs(KeepActivePhase phase)
+        {
+            Phase = phase;
+        }
+
+        public KeepActivePhase Phase { get; private set; }
+    }
+
     internal sealed class KeepActiveService : IDisposable
     {
         internal const int IdleThresholdMilliseconds = 45000;
+        internal const int EndingSoonMinutes = 15;
+        internal const int CriticalMinutes = 5;
         private readonly System.Windows.Forms.Timer executionTimer;
 
         private DateTime activeUntilUtc;
@@ -18,12 +39,14 @@ namespace Raudo
         {
             executionTimer = new System.Windows.Forms.Timer();
             executionTimer.Tick += ExecutionTimerTick;
-            StatusMessage = "Listo para activar";
+            StatusMessage = "Pulso listo";
         }
 
         public event EventHandler StateChanged;
+        public event EventHandler<KeepActiveAttentionEventArgs> AttentionRequired;
 
         public bool IsActive { get; private set; }
+        public KeepActivePhase Phase { get; private set; }
         public int PulseCount { get; private set; }
         public string StatusMessage { get; private set; }
 
@@ -47,6 +70,7 @@ namespace Raudo
                 ? "Activo"
                 : "Activo; Windows rechazó la solicitud adicional de energía";
             IsActive = true;
+            Phase = DeterminePhase(activeUntilUtc - DateTime.UtcNow);
             ScheduleNextCheck(IdleThresholdMilliseconds);
             RaiseStateChanged();
         }
@@ -62,6 +86,7 @@ namespace Raudo
 
             bool changed = IsActive || keepAwakeGranted;
             IsActive = false;
+            Phase = KeepActivePhase.Inactive;
             keepAwakeGranted = false;
             activeUntilUtc = DateTime.MinValue;
             StatusMessage = reason;
@@ -110,8 +135,17 @@ namespace Raudo
 
             if (DateTime.UtcNow >= activeUntilUtc)
             {
-                Stop("Tiempo completado");
+                Complete();
                 return;
+            }
+
+            KeepActivePhase nextPhase = DeterminePhase(activeUntilUtc - DateTime.UtcNow);
+            bool phaseChanged = nextPhase != Phase;
+            if (phaseChanged)
+            {
+                Phase = nextPhase;
+                RaiseStateChanged();
+                RaiseAttentionRequired(Phase);
             }
 
             uint idleMilliseconds;
@@ -124,13 +158,16 @@ namespace Raudo
                     string error;
                     if (!NativeInput.TryPulse(out error))
                     {
-                        Stop("No se pudo mantener activo: " + error);
+                        Stop("Pulso se detuvo: " + error);
                         return;
                     }
 
                     PulseCount++;
                     StatusMessage = "Activo";
-                    RaiseStateChanged();
+                    if (!phaseChanged)
+                    {
+                        RaiseStateChanged();
+                    }
                 }
                 else
                 {
@@ -151,14 +188,73 @@ namespace Raudo
             double untilExpiration = (activeUntilUtc - DateTime.UtcNow).TotalMilliseconds;
             if (untilExpiration <= 0)
             {
-                Stop("Tiempo completado");
+                Stop("Pulso finalizó");
                 return;
             }
 
             int delay = Math.Max(1000, requestedDelayMilliseconds);
             delay = Math.Min(delay, Math.Max(1000, (int)Math.Min(int.MaxValue, untilExpiration)));
+            double untilThreshold = GetMillisecondsUntilNextThreshold(untilExpiration);
+            if (untilThreshold > 0)
+            {
+                delay = Math.Min(
+                    delay,
+                    Math.Max(1000, (int)Math.Min(int.MaxValue, untilThreshold)));
+            }
             executionTimer.Interval = delay;
             executionTimer.Start();
+        }
+
+        internal static KeepActivePhase DeterminePhase(TimeSpan remaining)
+        {
+            if (remaining <= TimeSpan.Zero)
+            {
+                return KeepActivePhase.Completed;
+            }
+
+            if (remaining <= TimeSpan.FromMinutes(CriticalMinutes))
+            {
+                return KeepActivePhase.Critical;
+            }
+
+            if (remaining <= TimeSpan.FromMinutes(EndingSoonMinutes))
+            {
+                return KeepActivePhase.EndingSoon;
+            }
+
+            return KeepActivePhase.Active;
+        }
+
+        private double GetMillisecondsUntilNextThreshold(double untilExpiration)
+        {
+            if (Phase == KeepActivePhase.Active)
+            {
+                return untilExpiration - TimeSpan.FromMinutes(EndingSoonMinutes).TotalMilliseconds;
+            }
+
+            if (Phase == KeepActivePhase.EndingSoon)
+            {
+                return untilExpiration - TimeSpan.FromMinutes(CriticalMinutes).TotalMilliseconds;
+            }
+
+            return untilExpiration;
+        }
+
+        private void Complete()
+        {
+            executionTimer.Stop();
+            if (keepAwakeGranted)
+            {
+                PowerState.Release();
+            }
+
+            IsActive = false;
+            keepAwakeGranted = false;
+            activeUntilUtc = DateTime.MinValue;
+            Phase = KeepActivePhase.Completed;
+            StatusMessage = "Pulso finalizó";
+            RaiseStateChanged();
+            RaiseAttentionRequired(Phase);
         }
 
         private void RaiseStateChanged()
@@ -167,6 +263,15 @@ namespace Raudo
             if (handler != null)
             {
                 handler(this, EventArgs.Empty);
+            }
+        }
+
+        private void RaiseAttentionRequired(KeepActivePhase phase)
+        {
+            EventHandler<KeepActiveAttentionEventArgs> handler = AttentionRequired;
+            if (handler != null)
+            {
+                handler(this, new KeepActiveAttentionEventArgs(phase));
             }
         }
 
