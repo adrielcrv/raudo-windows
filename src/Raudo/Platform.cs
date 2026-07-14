@@ -261,6 +261,10 @@ namespace Raudo
 
         [DllImport("user32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool ShowScrollBar(IntPtr window, int bar, bool show);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool GetLastInputInfo(ref LastInputInfo info);
 
         [DllImport("user32.dll")]

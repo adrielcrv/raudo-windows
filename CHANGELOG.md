@@ -4,6 +4,17 @@ Este proyecto utiliza versionado semántico.
 
 ## [Sin publicar]
 
+## [1.7.0] - 2026-07-14
+
+- Salto adapta su tamaño a la intención actual: una fila para cálculos, conversiones y búsquedas específicas, hasta cinco filas para búsquedas amplias.
+- Las entradas numéricas y operaciones incompletas conservan una isla de cálculo compacta mientras se escribe.
+- Transición de tamaño breve, interrumpible y sin rebote que mantiene estable la barra de búsqueda y respeta la reducción de movimiento de Windows.
+- Zona de agarre para mover Salto, doble clic para centrar y posición recordada de forma segura por pantalla.
+- Control de opacidad con niveles de 100%, 82% y 64%, acceso mediante `Ctrl + Shift + O` y opacidad completa obligatoria en alto contraste.
+- Indicador interno de 3 píxeles para recorrer resultados adicionales sin una barra de desplazamiento convencional.
+- Estado de preparación limitado a la carga real del catálogo de aplicaciones, con animación de baja frecuencia que se detiene al completar, ocultar o reducir movimiento.
+- Validación ampliada para estados adaptativos, transiciones interrumpidas, carga, persistencia, temas, alto contraste, escalado al 150% y consumo de recursos.
+
 ## [1.6.0] - 2026-07-13
 
 - Modo Mini incorpora controles directos de pista anterior, reproducción o pausa y pista siguiente sin abrir Salto.

@@ -13,6 +13,9 @@ namespace Raudo
             DurationMinutes = 30;
             MiniCenterX = -1;
             MiniCenterY = -1;
+            SaltoCenterX = -1;
+            SaltoTopY = -1;
+            SaltoOpacityPercent = 100;
         }
 
         public int DurationMinutes { get; set; }
@@ -20,6 +23,9 @@ namespace Raudo
         public bool MiniHintShown { get; set; }
         public int MiniCenterX { get; set; }
         public int MiniCenterY { get; set; }
+        public int SaltoCenterX { get; set; }
+        public int SaltoTopY { get; set; }
+        public int SaltoOpacityPercent { get; set; }
 
         public void Normalize()
         {
@@ -32,6 +38,19 @@ namespace Raudo
             {
                 MiniCenterX = -1;
                 MiniCenterY = -1;
+            }
+
+            if (SaltoCenterX < -1 || SaltoTopY < -1)
+            {
+                SaltoCenterX = -1;
+                SaltoTopY = -1;
+            }
+
+            if (SaltoOpacityPercent != 100
+                && SaltoOpacityPercent != 82
+                && SaltoOpacityPercent != 64)
+            {
+                SaltoOpacityPercent = 100;
             }
         }
     }

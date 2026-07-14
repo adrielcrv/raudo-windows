@@ -10,6 +10,8 @@ La duración seleccionada se guarda en:
 %LOCALAPPDATA%\Raudo\settings.json
 ```
 
+El mismo archivo conserva si Modo Mini está activo, su posición, la posición elegida para Salto y uno de sus tres niveles de opacidad. No contiene consultas, resultados, títulos de ventanas o nombres de aplicaciones.
+
 La opción **Iniciar con Windows** crea o elimina el valor `Raudo` en:
 
 ```text
@@ -30,7 +32,7 @@ Cuando Salto se abre, Raudo consulta los títulos de las ventanas visibles, el c
 
 Los cálculos y conversiones se procesan localmente. Raudo sólo escribe el resultado en el portapapeles después de que el usuario selecciona la acción correspondiente; no lee ni conserva el contenido anterior.
 
-Raudo no lee el contenido de las ventanas, no recorre ni indexa archivos, no conserva el texto de búsqueda y no envía estos datos por la red. El catálogo de aplicaciones se prepara bajo demanda como máximo una vez por proceso. Las carpetas remotas y rutas de red no se consultan ni se muestran como accesos directos.
+Raudo no lee el contenido de las ventanas, no recorre ni indexa archivos, no conserva el texto de búsqueda y no envía estos datos por la red. El catálogo de aplicaciones se prepara bajo demanda como máximo una vez por proceso; el indicador de preparación se muestra sólo durante esa operación y no registra su contenido. Las carpetas remotas y rutas de red no se consultan ni se muestran como accesos directos.
 
 ## Controles multimedia
 
