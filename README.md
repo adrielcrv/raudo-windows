@@ -27,10 +27,13 @@ Raudo reúne utilidades locales y ligeras para Windows en una aplicación de ban
 ### Salto
 
 - Abre un lanzador local con `Ctrl + Alt + Espacio` o desde la bandeja.
-- Busca acciones sin distinguir mayúsculas ni acentos.
+- Busca ventanas, aplicaciones y acciones sin distinguir mayúsculas ni acentos.
+- Prioriza una ventana abierta antes de iniciar otra instancia de la misma aplicación.
+- Indica si una ventana está en este u otro escritorio y permite enfocarla o traerla.
+- Obtiene las aplicaciones del catálogo de Windows una sola vez por sesión y bajo demanda.
 - Permite iniciar o detener Pulso, abrir Recortes y Raudo, controlar Modo Mini y cambiar entre escritorios disponibles.
 - Se opera con flechas, `Enter`, `Escape` o un clic.
-- Se crea únicamente al primer uso y no mantiene historial, indexación, scripts ni procesos auxiliares.
+- Se crea únicamente al primer uso: no mantiene historial, no indexa archivos, no ejecuta scripts ni instala procesos auxiliares.
 
 <p align="center">
   <img src="docs/raudo-salto-dark.png" width="640" alt="Salto de Raudo en modo oscuro">
@@ -63,7 +66,7 @@ La detección de ventanas utiliza la interfaz pública `IVirtualDesktopManager`.
 
 ## Privacidad y red
 
-Raudo no incluye telemetría, cuentas ni publicidad. Las búsquedas de Salto permanecen en memoria y se utilizan únicamente para filtrar el catálogo local. Raudo sólo se conecta a Internet cuando el usuario selecciona **Buscar actualizaciones**. En una instalación local, puede descargar el paquete oficial después de una confirmación, validar su versión y sus sumas SHA-256, reemplazar el ejecutable de forma atómica y reiniciarse. Una copia portable abre la publicación para actualización manual.
+Raudo no incluye telemetría, cuentas ni publicidad. Las búsquedas de Salto permanecen en memoria y se utilizan únicamente para filtrar ventanas, aplicaciones y acciones locales. El catálogo de aplicaciones se consulta a Windows bajo demanda; Raudo no recorre el disco ni conserva las consultas. Raudo sólo se conecta a Internet cuando el usuario selecciona **Buscar actualizaciones**. En una instalación local, puede descargar el paquete oficial después de una confirmación, validar su versión y sus sumas SHA-256, reemplazar el ejecutable de forma atómica y reiniciarse. Una copia portable abre la publicación para actualización manual.
 
 Consulta [PRIVACY.md](PRIVACY.md) para conocer los datos locales y el comportamiento de red.
 

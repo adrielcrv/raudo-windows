@@ -16,15 +16,26 @@ namespace Raudo
     internal sealed class DesktopWindow
     {
         public DesktopWindow(IntPtr handle, string applicationName, string title)
+            : this(handle, applicationName, title, false)
+        {
+        }
+
+        public DesktopWindow(
+            IntPtr handle,
+            string applicationName,
+            string title,
+            bool isOnCurrentDesktop)
         {
             Handle = handle;
             ApplicationName = applicationName;
             Title = title;
+            IsOnCurrentDesktop = isOnCurrentDesktop;
         }
 
         public IntPtr Handle { get; private set; }
         public string ApplicationName { get; private set; }
         public string Title { get; private set; }
+        public bool IsOnCurrentDesktop { get; private set; }
 
         public string DisplayName
         {
@@ -324,6 +335,21 @@ namespace Raudo
             out IList<DesktopWindow> windows,
             out string error)
         {
+            return TryGetWindows(false, out windows, out error);
+        }
+
+        public bool TryGetOpenWindows(
+            out IList<DesktopWindow> windows,
+            out string error)
+        {
+            return TryGetWindows(true, out windows, out error);
+        }
+
+        private bool TryGetWindows(
+            bool includeCurrentDesktop,
+            out IList<DesktopWindow> windows,
+            out string error)
+        {
             List<DesktopWindow> results = new List<DesktopWindow>();
             windows = results;
 
@@ -339,7 +365,10 @@ namespace Raudo
                 {
                     try
                     {
-                        DesktopWindow candidate = CreateCandidate(handle, currentProcessId);
+                        DesktopWindow candidate = CreateCandidate(
+                            handle,
+                            currentProcessId,
+                            includeCurrentDesktop);
                         if (candidate != null)
                         {
                             results.Add(candidate);
@@ -431,10 +460,19 @@ namespace Raudo
 
             if (DesktopNativeMethods.IsIconic(window))
             {
-                DesktopNativeMethods.ShowWindowAsync(window, 9);
+                if (!DesktopNativeMethods.ShowWindowAsync(window, 9))
+                {
+                    error = "Windows no pudo restaurar la ventana seleccionada.";
+                    return false;
+                }
             }
 
-            DesktopNativeMethods.SetForegroundWindow(window);
+            if (!DesktopNativeMethods.SetForegroundWindow(window))
+            {
+                error = "La ventana está disponible, pero Windows no permitió activarla.";
+                return false;
+            }
+
             error = null;
             return true;
         }
@@ -675,7 +713,10 @@ namespace Raudo
             return manager != null;
         }
 
-        private DesktopWindow CreateCandidate(IntPtr handle, uint currentProcessId)
+        private DesktopWindow CreateCandidate(
+            IntPtr handle,
+            uint currentProcessId,
+            bool includeCurrentDesktop)
         {
             if (handle == IntPtr.Zero
                 || !DesktopNativeMethods.IsWindowVisible(handle)
@@ -709,7 +750,7 @@ namespace Raudo
 
             bool onCurrentDesktop;
             if (manager.IsWindowOnCurrentVirtualDesktop(handle, out onCurrentDesktop) < 0
-                || onCurrentDesktop)
+                || !includeCurrentDesktop && onCurrentDesktop)
             {
                 return null;
             }
@@ -729,7 +770,11 @@ namespace Raudo
             {
             }
 
-            return new DesktopWindow(handle, FormatApplicationName(processName), title);
+            return new DesktopWindow(
+                handle,
+                FormatApplicationName(processName),
+                title,
+                onCurrentDesktop);
         }
 
         private static string GetWindowTitle(IntPtr handle)

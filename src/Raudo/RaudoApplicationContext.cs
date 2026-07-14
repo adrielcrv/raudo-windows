@@ -27,6 +27,7 @@ namespace Raudo
         private readonly RegisteredWaitHandle showRequestRegistration;
         private readonly MainForm form;
         private readonly VirtualDesktopService virtualDesktopService;
+        private readonly InstalledApplicationCatalog installedApplicationCatalog;
         private readonly RaudoActionCatalog actionCatalog;
         private readonly GlobalHotKey saltoHotKey;
 
@@ -49,6 +50,8 @@ namespace Raudo
             keepActiveService.StateChanged += KeepActiveServiceStateChanged;
             keepActiveService.AttentionRequired += KeepActiveServiceAttentionRequired;
             virtualDesktopService = new VirtualDesktopService();
+            installedApplicationCatalog = new InstalledApplicationCatalog();
+            installedApplicationCatalog.LoadCompleted += InstalledApplicationsLoadCompleted;
             actionCatalog = new RaudoActionCatalog(CreateSaltoActions);
 
             form = new MainForm(keepActiveService, settings, idleIcon);
@@ -252,7 +255,65 @@ namespace Raudo
                 }
             }
 
+            IList<DesktopWindow> windows;
+            string windowError;
+            if (virtualDesktopService.TryGetOpenWindows(out windows, out windowError))
+            {
+                foreach (DesktopWindow rawWindow in windows)
+                {
+                    DesktopWindow window = rawWindow;
+                    string applicationName = string.IsNullOrWhiteSpace(window.ApplicationName)
+                        ? "Aplicación"
+                        : window.ApplicationName;
+                    string displayTitle = string.IsNullOrWhiteSpace(window.ApplicationName)
+                        ? window.Title
+                        : applicationName + " — " + window.Title;
+                    actions.Add(new RaudoAction(
+                        "open-window:" + window.Handle.ToInt64().ToString("X"),
+                        displayTitle,
+                        window.IsOnCurrentDesktop
+                            ? "Ventana · Este escritorio"
+                            : "Ventana · Otro escritorio",
+                        applicationName + " ventana escritorio " + window.Title,
+                        window.IsOnCurrentDesktop ? "Abrir" : "Traer",
+                        RaudoActionGlyph.Window,
+                        RaudoActionKind.Window,
+                        false,
+                        0,
+                        delegate { return BringWindow(window.Handle); }));
+                }
+            }
+
+            IList<InstalledApplication> installed = installedApplicationCatalog.GetSnapshot();
+            foreach (InstalledApplication rawApplication in installed)
+            {
+                InstalledApplication application = rawApplication;
+                actions.Add(new RaudoAction(
+                    "open-application:" + application.Identifier,
+                    application.Name,
+                    "Aplicación instalada",
+                    "aplicacion programa iniciar abrir " + application.Name,
+                    "Abrir",
+                    RaudoActionGlyph.Application,
+                    RaudoActionKind.Application,
+                    false,
+                    15,
+                    delegate
+                    {
+                        return InstalledApplicationLauncher.TryLaunch(
+                            application.Identifier);
+                    }));
+            }
+
             return actions;
+        }
+
+        private string BringWindow(IntPtr handle)
+        {
+            string error;
+            return virtualDesktopService.TryBringHere(handle, out error)
+                ? null
+                : error ?? "Windows no pudo abrir la ventana seleccionada.";
         }
 
         private void ToggleRequested(object sender, EventArgs eventArgs)
@@ -637,6 +698,10 @@ namespace Raudo
             }
 
             EnsureSaltoForm();
+            installedApplicationCatalog.EnsureLoading();
+            saltoForm.SetApplicationCatalogState(
+                installedApplicationCatalog.IsLoading,
+                installedApplicationCatalog.LoadError);
             saltoForm.ShowSalto();
         }
 
@@ -648,7 +713,14 @@ namespace Raudo
             }
 
             EnsureSaltoForm();
-            saltoForm.ToggleSalto();
+            if (saltoForm.Visible)
+            {
+                saltoForm.HideSalto();
+            }
+            else
+            {
+                ShowSalto();
+            }
         }
 
         private void EnsureSaltoForm()
@@ -658,6 +730,25 @@ namespace Raudo
                 saltoForm = new SaltoForm(actionCatalog);
                 saltoForm.ApplyTheme(ThemeService.Current());
             }
+        }
+
+        private void InstalledApplicationsLoadCompleted(object sender, EventArgs eventArgs)
+        {
+            RunOnUiThread(delegate
+            {
+                if (saltoForm == null || saltoForm.IsDisposed)
+                {
+                    return;
+                }
+
+                saltoForm.SetApplicationCatalogState(
+                    false,
+                    installedApplicationCatalog.LoadError);
+                if (saltoForm.Visible)
+                {
+                    saltoForm.RefreshCatalog();
+                }
+            });
         }
 
         private void ShowRequestSignaled(object state, bool timedOut)
@@ -871,6 +962,7 @@ namespace Raudo
                 minimizeTransition = null;
             }
             notifyIcon.Visible = false;
+            installedApplicationCatalog.LoadCompleted -= InstalledApplicationsLoadCompleted;
             keepActiveService.Dispose();
             if (saltoForm != null)
             {

@@ -14,15 +14,25 @@ namespace Raudo
         MainWindow,
         Mini,
         DesktopLeft,
-        DesktopRight
+        DesktopRight,
+        Window,
+        Application
+    }
+
+    internal enum RaudoActionKind
+    {
+        Raudo,
+        Window,
+        Application
     }
 
     internal sealed class RaudoAction
     {
-        private readonly Action executor;
+        private readonly Func<string> executor;
         private readonly string normalizedTitle;
         private readonly string normalizedDescription;
         private readonly string normalizedKeywords;
+        private readonly string normalizedCombined;
 
         public RaudoAction(
             string id,
@@ -32,6 +42,31 @@ namespace Raudo
             string shortcutHint,
             RaudoActionGlyph glyph,
             Action execute)
+            : this(
+                id,
+                title,
+                description,
+                keywords,
+                shortcutHint,
+                glyph,
+                RaudoActionKind.Raudo,
+                true,
+                2,
+                Wrap(execute))
+        {
+        }
+
+        public RaudoAction(
+            string id,
+            string title,
+            string description,
+            string keywords,
+            string shortcutHint,
+            RaudoActionGlyph glyph,
+            RaudoActionKind kind,
+            bool showWhenQueryEmpty,
+            int searchPriority,
+            Func<string> execute)
         {
             if (string.IsNullOrWhiteSpace(id))
             {
@@ -54,10 +89,18 @@ namespace Raudo
             Keywords = keywords ?? string.Empty;
             ShortcutHint = shortcutHint ?? string.Empty;
             Glyph = glyph;
+            Kind = kind;
+            ShowWhenQueryEmpty = showWhenQueryEmpty;
+            SearchPriority = Math.Max(0, searchPriority);
             executor = execute;
             normalizedTitle = RaudoActionCatalog.Normalize(Title);
             normalizedDescription = RaudoActionCatalog.Normalize(Description);
             normalizedKeywords = RaudoActionCatalog.Normalize(Keywords);
+            normalizedCombined = normalizedTitle
+                + " "
+                + normalizedDescription
+                + " "
+                + normalizedKeywords;
         }
 
         public string Id { get; private set; }
@@ -66,10 +109,20 @@ namespace Raudo
         public string Keywords { get; private set; }
         public string ShortcutHint { get; private set; }
         public RaudoActionGlyph Glyph { get; private set; }
+        public RaudoActionKind Kind { get; private set; }
+        public bool ShowWhenQueryEmpty { get; private set; }
+        public int SearchPriority { get; private set; }
 
-        public void Execute()
+        public string Execute()
         {
-            executor();
+            try
+            {
+                return executor();
+            }
+            catch (Exception)
+            {
+                return "No se pudo completar la acción.";
+            }
         }
 
         public int GetMatchScore(string normalizedQuery)
@@ -79,17 +132,12 @@ namespace Raudo
                 return 0;
             }
 
-            string combined = normalizedTitle
-                + " "
-                + normalizedDescription
-                + " "
-                + normalizedKeywords;
             string[] tokens = normalizedQuery.Split(
                 new[] { ' ' },
                 StringSplitOptions.RemoveEmptyEntries);
             foreach (string token in tokens)
             {
-                if (combined.IndexOf(token, StringComparison.Ordinal) < 0)
+                if (normalizedCombined.IndexOf(token, StringComparison.Ordinal) < 0)
                 {
                     return int.MaxValue;
                 }
@@ -120,7 +168,23 @@ namespace Raudo
 
         public override string ToString()
         {
-            return Title;
+            return string.IsNullOrWhiteSpace(Description)
+                ? Title
+                : Title + ", " + Description;
+        }
+
+        private static Func<string> Wrap(Action action)
+        {
+            if (action == null)
+            {
+                throw new ArgumentNullException("execute");
+            }
+
+            return delegate
+            {
+                action();
+                return null;
+            };
         }
     }
 
@@ -165,10 +229,18 @@ namespace Raudo
             for (int index = 0; index < snapshot.Count; index++)
             {
                 RaudoAction action = snapshot[index];
+                if (normalizedQuery.Length == 0 && !action.ShowWhenQueryEmpty)
+                {
+                    continue;
+                }
+
                 int score = action.GetMatchScore(normalizedQuery);
                 if (score != int.MaxValue)
                 {
-                    matches.Add(new ScoredAction(action, score, index));
+                    matches.Add(new ScoredAction(
+                        action,
+                        score + action.SearchPriority,
+                        index));
                 }
             }
 
@@ -180,9 +252,17 @@ namespace Raudo
                     : left.Order.CompareTo(right.Order);
             });
 
-            List<RaudoAction> result = new List<RaudoAction>(matches.Count);
+            int resultCount = normalizedQuery.Length == 0
+                ? matches.Count
+                : Math.Min(12, matches.Count);
+            List<RaudoAction> result = new List<RaudoAction>(resultCount);
             foreach (ScoredAction match in matches)
             {
+                if (result.Count >= resultCount)
+                {
+                    break;
+                }
+
                 result.Add(match.Action);
             }
 
@@ -280,6 +360,12 @@ namespace Raudo
                             break;
                         case RaudoActionGlyph.DesktopRight:
                             DrawDesktop(graphics, pen, left, top, scale, true);
+                            break;
+                        case RaudoActionGlyph.Window:
+                            DrawOpenWindow(graphics, pen, left, top, scale);
+                            break;
+                        case RaudoActionGlyph.Application:
+                            DrawApplication(graphics, pen, left, top, scale);
                             break;
                         default:
                             DrawPulse(graphics, pen, left, top, scale);
@@ -405,6 +491,55 @@ namespace Raudo
                 centerY,
                 centerX + (1F * direction * scale),
                 centerY + (3F * scale));
+        }
+
+        private static void DrawOpenWindow(
+            Graphics graphics,
+            Pen pen,
+            float left,
+            float top,
+            float scale)
+        {
+            RectangleF back = new RectangleF(
+                left + (6F * scale),
+                top + (4F * scale),
+                15F * scale,
+                13F * scale);
+            RectangleF front = new RectangleF(
+                left + (3F * scale),
+                top + (7F * scale),
+                15F * scale,
+                13F * scale);
+            graphics.DrawRectangle(pen, back.X, back.Y, back.Width, back.Height);
+            graphics.DrawRectangle(pen, front.X, front.Y, front.Width, front.Height);
+            graphics.DrawLine(
+                pen,
+                front.Left,
+                front.Top + (4F * scale),
+                front.Right,
+                front.Top + (4F * scale));
+        }
+
+        private static void DrawApplication(
+            Graphics graphics,
+            Pen pen,
+            float left,
+            float top,
+            float scale)
+        {
+            float tile = 7F * scale;
+            float gap = 3F * scale;
+            float startX = left + (4F * scale);
+            float startY = top + (4F * scale);
+            graphics.DrawRectangle(pen, startX, startY, tile, tile);
+            graphics.DrawRectangle(pen, startX + tile + gap, startY, tile, tile);
+            graphics.DrawRectangle(pen, startX, startY + tile + gap, tile, tile);
+            graphics.DrawRectangle(
+                pen,
+                startX + tile + gap,
+                startY + tile + gap,
+                tile,
+                tile);
         }
     }
 }
