@@ -18,6 +18,7 @@ namespace Raudo
         private readonly ToolStripMenuItem saltoItem;
         private readonly ToolStripMenuItem toggleItem;
         private readonly ToolStripMenuItem durationMenu;
+        private readonly ToolStripMenuItem mediaMenu;
         private readonly ToolStripMenuItem startupItem;
         private readonly ToolStripMenuItem miniModeItem;
         private readonly System.Windows.Forms.Timer reminderRetryTimer;
@@ -29,6 +30,7 @@ namespace Raudo
         private readonly VirtualDesktopService virtualDesktopService;
         private readonly InstalledApplicationCatalog installedApplicationCatalog;
         private readonly QuickResultProvider quickResultProvider;
+        private readonly MediaControlService mediaControlService;
         private readonly RaudoActionCatalog actionCatalog;
         private readonly GlobalHotKey saltoHotKey;
 
@@ -54,6 +56,7 @@ namespace Raudo
             installedApplicationCatalog = new InstalledApplicationCatalog();
             installedApplicationCatalog.LoadCompleted += InstalledApplicationsLoadCompleted;
             quickResultProvider = new QuickResultProvider(ClipboardWriter.TryCopy);
+            mediaControlService = new MediaControlService();
             actionCatalog = new RaudoActionCatalog(
                 CreateSaltoActions,
                 quickResultProvider.CreateActions);
@@ -98,6 +101,10 @@ namespace Raudo
             captureItem.ShortcutKeyDisplayString = "Win + Shift + S";
             captureItem.Click += ScreenCaptureRequested;
             trayMenu.Items.Add(captureItem);
+
+            mediaMenu = new ToolStripMenuItem("Multimedia");
+            AddMediaMenuItems();
+            trayMenu.Items.Add(mediaMenu);
 
             miniModeItem = new ToolStripMenuItem("Modo Mini");
             miniModeItem.CheckOnClick = true;
@@ -177,6 +184,24 @@ namespace Raudo
             item.Tag = minutes;
             item.Click += DurationMenuItemClick;
             durationMenu.DropDownItems.Add(item);
+        }
+
+        private void AddMediaMenuItems()
+        {
+            IList<MediaControlDefinition> definitions = MediaControlCatalog.GetDefinitions();
+            for (int index = 0; index < definitions.Count; index++)
+            {
+                if (index == 3)
+                {
+                    mediaMenu.DropDownItems.Add(new ToolStripSeparator());
+                }
+
+                MediaControlDefinition definition = definitions[index];
+                ToolStripMenuItem item = new ToolStripMenuItem(definition.Title);
+                item.Tag = definition.Command;
+                item.Click += MediaControlMenuItemClick;
+                mediaMenu.DropDownItems.Add(item);
+            }
         }
 
         private IList<RaudoAction> CreateSaltoActions()
@@ -264,6 +289,12 @@ namespace Raudo
                 actions.Add(folderAction);
             }
 
+            foreach (RaudoAction mediaAction in MediaControlCatalog.CreateActions(
+                mediaControlService))
+            {
+                actions.Add(mediaAction);
+            }
+
             IList<DesktopWindow> windows;
             string windowError;
             if (virtualDesktopService.TryGetOpenWindows(out windows, out windowError))
@@ -323,6 +354,25 @@ namespace Raudo
             return virtualDesktopService.TryBringHere(handle, out error)
                 ? null
                 : error ?? "Windows no pudo abrir la ventana seleccionada.";
+        }
+
+        private void MediaControlMenuItemClick(object sender, EventArgs eventArgs)
+        {
+            ToolStripMenuItem item = sender as ToolStripMenuItem;
+            if (item == null || !(item.Tag is MediaCommand))
+            {
+                return;
+            }
+
+            string error = mediaControlService.TryExecute((MediaCommand)item.Tag);
+            if (!string.IsNullOrWhiteSpace(error))
+            {
+                notifyIcon.ShowBalloonTip(
+                    2500,
+                    "Control multimedia",
+                    error,
+                    ToolTipIcon.Warning);
+            }
         }
 
         private void ToggleRequested(object sender, EventArgs eventArgs)

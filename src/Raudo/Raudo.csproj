@@ -50,6 +50,7 @@
     <Compile Include="GlobalHotKey.cs" />
     <Compile Include="KeepActiveService.cs" />
     <Compile Include="MainForm.cs" />
+    <Compile Include="MediaControl.cs" />
     <Compile Include="MiniForm.cs" />
     <Compile Include="Platform.cs" />
     <Compile Include="Program.cs" />

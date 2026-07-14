@@ -19,7 +19,13 @@ namespace Raudo
         Application,
         Calculator,
         Conversion,
-        Folder
+        Folder,
+        MediaPlayPause,
+        MediaPrevious,
+        MediaNext,
+        VolumeMute,
+        VolumeDown,
+        VolumeUp
     }
 
     internal enum RaudoActionKind
@@ -29,7 +35,8 @@ namespace Raudo
         Application,
         Calculation,
         Conversion,
-        Folder
+        Folder,
+        Media
     }
 
     internal sealed class RaudoAction
@@ -411,6 +418,24 @@ namespace Raudo
                         case RaudoActionGlyph.Folder:
                             DrawFolder(graphics, pen, left, top, scale);
                             break;
+                        case RaudoActionGlyph.MediaPlayPause:
+                            DrawMediaPlayPause(graphics, brush, left, top, scale);
+                            break;
+                        case RaudoActionGlyph.MediaPrevious:
+                            DrawMediaSkip(graphics, pen, brush, left, top, scale, false);
+                            break;
+                        case RaudoActionGlyph.MediaNext:
+                            DrawMediaSkip(graphics, pen, brush, left, top, scale, true);
+                            break;
+                        case RaudoActionGlyph.VolumeMute:
+                            DrawVolume(graphics, pen, left, top, scale, 0, true);
+                            break;
+                        case RaudoActionGlyph.VolumeDown:
+                            DrawVolume(graphics, pen, left, top, scale, 1, false);
+                            break;
+                        case RaudoActionGlyph.VolumeUp:
+                            DrawVolume(graphics, pen, left, top, scale, 2, false);
+                            break;
                         default:
                             DrawPulse(graphics, pen, left, top, scale);
                             break;
@@ -690,6 +715,129 @@ namespace Raudo
                 new PointF(left + (3F * scale), top + (7F * scale))
             };
             graphics.DrawLines(pen, outline);
+        }
+
+        private static void DrawMediaPlayPause(
+            Graphics graphics,
+            Brush brush,
+            float left,
+            float top,
+            float scale)
+        {
+            PointF[] play =
+            {
+                new PointF(left + (4F * scale), top + (5F * scale)),
+                new PointF(left + (4F * scale), top + (19F * scale)),
+                new PointF(left + (12F * scale), top + (12F * scale))
+            };
+            graphics.FillPolygon(brush, play);
+            graphics.FillRectangle(
+                brush,
+                left + (15F * scale),
+                top + (6F * scale),
+                2F * scale,
+                12F * scale);
+            graphics.FillRectangle(
+                brush,
+                left + (19F * scale),
+                top + (6F * scale),
+                2F * scale,
+                12F * scale);
+        }
+
+        private static void DrawMediaSkip(
+            Graphics graphics,
+            Pen pen,
+            Brush brush,
+            float left,
+            float top,
+            float scale,
+            bool next)
+        {
+            float barX = left + ((next ? 20F : 4F) * scale);
+            graphics.DrawLine(
+                pen,
+                barX,
+                top + (5F * scale),
+                barX,
+                top + (19F * scale));
+            PointF[] triangle = next
+                ? new[]
+                {
+                    new PointF(left + (5F * scale), top + (5F * scale)),
+                    new PointF(left + (5F * scale), top + (19F * scale)),
+                    new PointF(left + (17F * scale), top + (12F * scale))
+                }
+                : new[]
+                {
+                    new PointF(left + (19F * scale), top + (5F * scale)),
+                    new PointF(left + (19F * scale), top + (19F * scale)),
+                    new PointF(left + (7F * scale), top + (12F * scale))
+                };
+            graphics.FillPolygon(brush, triangle);
+        }
+
+        private static void DrawVolume(
+            Graphics graphics,
+            Pen pen,
+            float left,
+            float top,
+            float scale,
+            int waveCount,
+            bool muted)
+        {
+            PointF[] speaker =
+            {
+                new PointF(left + (3F * scale), top + (10F * scale)),
+                new PointF(left + (7F * scale), top + (10F * scale)),
+                new PointF(left + (12F * scale), top + (5F * scale)),
+                new PointF(left + (12F * scale), top + (19F * scale)),
+                new PointF(left + (7F * scale), top + (14F * scale)),
+                new PointF(left + (3F * scale), top + (14F * scale)),
+                new PointF(left + (3F * scale), top + (10F * scale))
+            };
+            graphics.DrawLines(pen, speaker);
+
+            if (muted)
+            {
+                graphics.DrawLine(
+                    pen,
+                    left + (16F * scale),
+                    top + (9F * scale),
+                    left + (21F * scale),
+                    top + (15F * scale));
+                graphics.DrawLine(
+                    pen,
+                    left + (21F * scale),
+                    top + (9F * scale),
+                    left + (16F * scale),
+                    top + (15F * scale));
+                return;
+            }
+
+            if (waveCount >= 1)
+            {
+                graphics.DrawArc(
+                    pen,
+                    left + (11F * scale),
+                    top + (8F * scale),
+                    7F * scale,
+                    8F * scale,
+                    -55F,
+                    110F);
+            }
+
+            if (waveCount >= 2)
+            {
+                graphics.DrawArc(
+                    pen,
+                    left + (10F * scale),
+                    top + (5F * scale),
+                    13F * scale,
+                    14F * scale,
+                    -50F,
+                    100F);
+            }
         }
     }
 }

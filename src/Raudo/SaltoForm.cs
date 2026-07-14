@@ -526,6 +526,9 @@ namespace Raudo
                 case RaudoActionKind.Folder:
                     verb = "abrir";
                     break;
+                case RaudoActionKind.Media:
+                    verb = "controlar";
+                    break;
                 default:
                     verb = "ejecutar";
                     break;
