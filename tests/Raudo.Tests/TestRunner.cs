@@ -95,6 +95,28 @@ internal static class TestRunner
                 return 0;
             }
 
+            if (args.Length == 1 && args[0].StartsWith("--capture-salto-search-dark=", StringComparison.Ordinal))
+            {
+                CaptureSalto(
+                    args[0].Substring("--capture-salto-search-dark=".Length),
+                    true,
+                    "excel");
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
+                && args[0].StartsWith("--capture-salto-search-dark-150=", StringComparison.Ordinal))
+            {
+                CaptureSaltoScaled(
+                    args[0].Substring("--capture-salto-search-dark-150=".Length),
+                    true,
+                    "excel",
+                    1.5F);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
             if (args.Length == 1 && string.Equals(args[0], "--resource-probe-salto", StringComparison.Ordinal))
             {
                 RunSaltoResourceProbe();
@@ -105,6 +127,31 @@ internal static class TestRunner
             if (args.Length == 1 && string.Equals(args[0], "--hotkey-probe", StringComparison.Ordinal))
             {
                 RunHotKeyProbe();
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
+                && string.Equals(args[0], "--resource-probe-unified-salto", StringComparison.Ordinal))
+            {
+                RunUnifiedSaltoResourceProbe();
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
+                && string.Equals(args[0], "--application-catalog-probe", StringComparison.Ordinal))
+            {
+                RunApplicationCatalogProbe();
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
+                && args[0].StartsWith("--application-launch-probe=", StringComparison.Ordinal))
+            {
+                RunApplicationLaunchProbe(
+                    args[0].Substring("--application-launch-probe=".Length));
                 Console.WriteLine("PASS");
                 return 0;
             }
@@ -386,6 +433,110 @@ internal static class TestRunner
         }
     }
 
+    private static void CaptureSaltoScaled(
+        string path,
+        bool dark,
+        string query,
+        float scaleFactor)
+    {
+        Application.EnableVisualStyles();
+        Application.SetCompatibleTextRenderingDefault(false);
+        RaudoActionCatalog catalog = CreateTestActionCatalog(null);
+        using (SaltoForm form = new SaltoForm(catalog))
+        {
+            form.ApplyTheme(ThemePalette.Create(dark));
+            form.Scale(new SizeF(scaleFactor, scaleFactor));
+            form.ShowSalto();
+            form.SetQueryForTesting(query);
+            Application.DoEvents();
+            Thread.Sleep(220);
+            Application.DoEvents();
+            using (Bitmap bitmap = new Bitmap(form.ClientSize.Width, form.ClientSize.Height))
+            {
+                form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, form.ClientSize));
+                bitmap.Save(path, ImageFormat.Png);
+            }
+
+            form.AllowCloseAndClose();
+        }
+    }
+
+    private static void RunUnifiedSaltoResourceProbe()
+    {
+        Application.EnableVisualStyles();
+        Application.SetCompatibleTextRenderingDefault(false);
+        InstalledApplicationCatalog applications = new InstalledApplicationCatalog();
+        applications.LoadNowForTesting();
+        IList<InstalledApplication> applicationSnapshot = applications.GetSnapshot();
+        RaudoActionCatalog catalog = new RaudoActionCatalog(delegate
+        {
+            List<RaudoAction> actions = new List<RaudoAction>();
+            actions.Add(new RaudoAction(
+                "window.main",
+                "Abrir Raudo",
+                "Mostrar controles y preferencias",
+                "configuracion ajustes",
+                string.Empty,
+                RaudoActionGlyph.MainWindow,
+                delegate { }));
+            foreach (InstalledApplication rawApplication in applicationSnapshot)
+            {
+                InstalledApplication application = rawApplication;
+                actions.Add(new RaudoAction(
+                    "open-application:" + application.Identifier,
+                    application.Name,
+                    "Aplicación instalada",
+                    "aplicacion programa iniciar abrir " + application.Name,
+                    "Abrir",
+                    RaudoActionGlyph.Application,
+                    RaudoActionKind.Application,
+                    false,
+                    15,
+                    delegate { return null; }));
+            }
+
+            return actions;
+        });
+
+        using (SaltoForm form = new SaltoForm(catalog))
+        using (Process process = Process.GetCurrentProcess())
+        {
+            form.ShowSalto();
+            Application.DoEvents();
+            Thread.Sleep(220);
+            Application.DoEvents();
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+
+            TimeSpan cpuBefore = process.TotalProcessorTime;
+            Stopwatch elapsed = Stopwatch.StartNew();
+            while (elapsed.Elapsed < TimeSpan.FromSeconds(5))
+            {
+                Application.DoEvents();
+                Thread.Sleep(50);
+            }
+
+            elapsed.Stop();
+            process.Refresh();
+            TimeSpan cpuUsed = process.TotalProcessorTime - cpuBefore;
+            double normalizedCpuPercent = cpuUsed.TotalMilliseconds
+                / elapsed.Elapsed.TotalMilliseconds
+                / Math.Max(1, Environment.ProcessorCount)
+                * 100D;
+            Console.WriteLine(
+                "Salto unificado: {0} apps · CPU {1:F3}% · Working set {2:F1} MB · Private {3:F1} MB",
+                applicationSnapshot.Count,
+                normalizedCpuPercent,
+                process.WorkingSet64 / 1024D / 1024D,
+                process.PrivateMemorySize64 / 1024D / 1024D);
+            Assert(
+                normalizedCpuPercent < 1D,
+                "Salto unificado excedió 1% de CPU en reposo.");
+            form.AllowCloseAndClose();
+        }
+    }
+
     private static RaudoActionCatalog CreateTestActionCatalog(Action invoked)
     {
         return new RaudoActionCatalog(delegate
@@ -424,9 +575,94 @@ internal static class TestRunner
                     "ventanas burbuja",
                     string.Empty,
                     RaudoActionGlyph.Mini,
-                    execute)
+                    execute),
+                new RaudoAction(
+                    "open-window:1234",
+                    "Excel — Presupuesto trimestral.xlsx",
+                    "Ventana · Otro escritorio",
+                    "excel ventana presupuesto escritorio",
+                    "Traer",
+                    RaudoActionGlyph.Window,
+                    RaudoActionKind.Window,
+                    false,
+                    0,
+                    delegate
+                    {
+                        execute();
+                        return null;
+                    }),
+                new RaudoAction(
+                    "open-application:excel",
+                    "Excel",
+                    "Aplicación instalada",
+                    "aplicacion programa iniciar abrir excel",
+                    "Abrir",
+                    RaudoActionGlyph.Application,
+                    RaudoActionKind.Application,
+                    false,
+                    15,
+                    delegate
+                    {
+                        execute();
+                        return null;
+                    })
             };
         });
+    }
+
+    private static void RunApplicationCatalogProbe()
+    {
+        InstalledApplicationCatalog catalog = new InstalledApplicationCatalog();
+        Stopwatch elapsed = Stopwatch.StartNew();
+        using (ManualResetEvent completed = new ManualResetEvent(false))
+        {
+            catalog.LoadCompleted += delegate { completed.Set(); };
+            catalog.EnsureLoading();
+            Assert(
+                completed.WaitOne(TimeSpan.FromSeconds(10)),
+                "El catálogo de aplicaciones excedió el tiempo permitido.");
+        }
+
+        elapsed.Stop();
+
+        IList<InstalledApplication> applications = catalog.GetSnapshot();
+        Assert(catalog.IsLoaded, "El catálogo de aplicaciones no terminó de cargar.");
+        Assert(
+            string.IsNullOrWhiteSpace(catalog.LoadError),
+            catalog.LoadError ?? "El catálogo de aplicaciones falló.");
+        Assert(applications.Count > 0, "Windows no devolvió aplicaciones instaladas.");
+        Console.WriteLine(
+            "Aplicaciones disponibles: {0} · Carga: {1:F0} ms",
+            applications.Count,
+            elapsed.Elapsed.TotalMilliseconds);
+    }
+
+    private static void RunApplicationLaunchProbe(string applicationName)
+    {
+        if (string.IsNullOrWhiteSpace(applicationName))
+        {
+            throw new ArgumentException("La aplicación de prueba es obligatoria.");
+        }
+
+        InstalledApplicationCatalog catalog = new InstalledApplicationCatalog();
+        catalog.LoadNowForTesting();
+        InstalledApplication selected = null;
+        foreach (InstalledApplication application in catalog.GetSnapshot())
+        {
+            if (string.Equals(
+                application.Name,
+                applicationName,
+                StringComparison.CurrentCultureIgnoreCase))
+            {
+                selected = application;
+                break;
+            }
+        }
+
+        Assert(selected != null, "La aplicación de prueba no está en AppsFolder.");
+        string error = InstalledApplicationLauncher.TryLaunch(selected.Identifier);
+        Assert(string.IsNullOrWhiteSpace(error), error ?? "No se pudo abrir la aplicación.");
+        Console.WriteLine("Aplicación iniciada: " + selected.Name);
     }
 
     private static void RunHotKeyProbe()
@@ -626,7 +862,10 @@ internal static class TestRunner
 
         RaudoActionCatalog actionCatalog = CreateTestActionCatalog(null);
         actionCatalog.Refresh();
-        Assert(actionCatalog.Count == 4, "El catálogo no cargó todas las acciones.");
+        Assert(actionCatalog.Count == 6, "El catálogo no cargó todos los resultados.");
+        Assert(
+            actionCatalog.Search(string.Empty).Count == 4,
+            "La consulta vacía mostró resultados dinámicos.");
         Assert(
             actionCatalog.Search("captura")[0].Id == "capture.screen",
             "La búsqueda por palabra clave no encontró Recortar.");
@@ -637,6 +876,9 @@ internal static class TestRunner
             actionCatalog.Search("pulso")[0].Id == "pulse.toggle",
             "La coincidencia de título no conservó prioridad.");
         Assert(
+            actionCatalog.Search("excel")[0].Kind == RaudoActionKind.Window,
+            "Una ventana abierta no tuvo prioridad sobre iniciar otra aplicación.");
+        Assert(
             actionCatalog.Search("sin coincidencia").Count == 0,
             "Una búsqueda desconocida devolvió acciones.");
         int actionInvocationCount = 0;
@@ -646,11 +888,30 @@ internal static class TestRunner
         executableCatalog.Search("pulso")[0].Execute();
         Assert(actionInvocationCount == 1, "El catálogo no ejecutó la acción seleccionada.");
 
+        InstalledApplicationCatalog installedCatalog =
+            new InstalledApplicationCatalog(delegate
+            {
+                return new List<InstalledApplication>
+                {
+                    new InstalledApplication("Excel", "office.excel"),
+                    new InstalledApplication("excel", "duplicate.excel"),
+                    new InstalledApplication("Calculadora", "windows.calculator"),
+                    new InstalledApplication(string.Empty, "invalid")
+                };
+            });
+        installedCatalog.LoadNowForTesting();
+        IList<InstalledApplication> installedApplications =
+            installedCatalog.GetSnapshot();
+        Assert(installedCatalog.IsLoaded, "El catálogo de aplicaciones no terminó.");
+        Assert(
+            installedApplications.Count == 2,
+            "El catálogo de aplicaciones no deduplicó sus resultados.");
+
         using (SaltoForm salto = new SaltoForm(actionCatalog))
         {
             salto.ApplyTheme(highContrast);
             salto.SetQueryForTesting(string.Empty);
-            Assert(salto.ResultCountForTesting == 4, "Salto no mostró el catálogo completo.");
+            Assert(salto.ResultCountForTesting == 4, "Salto no limitó la vista inicial.");
             salto.MoveSelectionForTesting(-1);
             Assert(
                 salto.SelectedActionIdForTesting == "mini.toggle",
@@ -981,6 +1242,25 @@ internal static class TestRunner
                         && childDesktop == originalDesktop,
                     "La ventana de prueba no se abrió en el escritorio original.");
 
+                IList<DesktopWindow> currentWindows;
+                string currentListError;
+                Assert(
+                    service.TryGetOpenWindows(out currentWindows, out currentListError),
+                    currentListError ?? "No se pudieron consultar las ventanas abiertas.");
+                DesktopWindow currentProbe = null;
+                foreach (DesktopWindow window in currentWindows)
+                {
+                    if (window.Handle == childWindow)
+                    {
+                        currentProbe = window;
+                        break;
+                    }
+                }
+
+                Assert(
+                    currentProbe != null && currentProbe.IsOnCurrentDesktop,
+                    "La ventana actual no apareció en la búsqueda unificada.");
+
                 if (TrySwitchToDifferentDesktop(
                     service,
                     originalDesktop,
@@ -1051,6 +1331,23 @@ internal static class TestRunner
                         && service.TryGetDesktopId(childWindow, out movedDesktop)
                         && destinationDesktop == movedDesktop,
                     "La ventana no terminó en el escritorio de destino.");
+
+                Assert(
+                    service.TryGetOpenWindows(out currentWindows, out currentListError),
+                    currentListError ?? "No se pudieron actualizar las ventanas abiertas.");
+                currentProbe = null;
+                foreach (DesktopWindow window in currentWindows)
+                {
+                    if (window.Handle == childWindow)
+                    {
+                        currentProbe = window;
+                        break;
+                    }
+                }
+
+                Assert(
+                    currentProbe != null && currentProbe.IsOnCurrentDesktop,
+                    "La ventana trasladada no quedó marcada en el escritorio actual.");
 
                 return true;
             }

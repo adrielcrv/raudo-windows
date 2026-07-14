@@ -26,6 +26,9 @@ namespace Raudo
 
         private ThemePalette palette;
         private bool allowClose;
+        private bool applicationsLoading;
+        private string applicationCatalogError;
+        private string executionError;
 
         public SaltoForm(RaudoActionCatalog actionCatalog)
         {
@@ -37,7 +40,8 @@ namespace Raudo
             catalog = actionCatalog;
             Text = "Salto · Raudo";
             AccessibleName = "Salto de Raudo";
-            AccessibleDescription = "Busca y ejecuta acciones locales de Raudo";
+            AccessibleDescription =
+                "Busca ventanas, aplicaciones y acciones locales de Raudo";
             ClientSize = new Size(640, 432);
             FormBorderStyle = FormBorderStyle.None;
             ShowInTaskbar = false;
@@ -68,8 +72,9 @@ namespace Raudo
             searchBox.Location = new Point(52, 17);
             searchBox.Size = new Size(466, 24);
             searchBox.TabIndex = 0;
-            searchBox.AccessibleName = "Buscar acciones de Raudo";
-            searchBox.AccessibleDescription = "Escribe para filtrar las acciones disponibles";
+            searchBox.AccessibleName = "Buscar en Salto";
+            searchBox.AccessibleDescription =
+                "Escribe para buscar ventanas, aplicaciones y acciones";
             searchBox.TextChanged += SearchBoxTextChanged;
             searchBox.HandleCreated += delegate { ApplySearchCue(); };
             searchSurface.Controls.Add(searchBox);
@@ -101,7 +106,7 @@ namespace Raudo
             Controls.Add(resultList);
 
             emptyLabel = CreateLabel(
-                "No hay acciones que coincidan",
+                "No hay resultados que coincidan",
                 10F,
                 FontStyle.Regular,
                 new Point(20, 150),
@@ -158,7 +163,9 @@ namespace Raudo
             sectionLabel.ForeColor = palette.TextFaint;
             emptyLabel.ForeColor = palette.TextMuted;
             footerDivider.BackColor = palette.Border;
-            localLabel.ForeColor = palette.TextMuted;
+            localLabel.ForeColor = string.IsNullOrWhiteSpace(executionError)
+                ? palette.TextMuted
+                : palette.Danger;
             keyboardHintLabel.ForeColor = palette.TextFaint;
             searchGlyph.ApplyTheme(palette);
             resultList.ApplyTheme(palette);
@@ -185,6 +192,7 @@ namespace Raudo
 
         public void ShowSalto()
         {
+            ResetFooterStatus();
             catalog.Refresh();
             searchBox.Text = string.Empty;
             RefreshResults();
@@ -233,6 +241,22 @@ namespace Raudo
             allowClose = true;
             openingTimer.Stop();
             Close();
+        }
+
+        public void SetApplicationCatalogState(bool loading, string error)
+        {
+            applicationsLoading = loading;
+            applicationCatalogError = error;
+            if (Visible)
+            {
+                RefreshResults();
+            }
+        }
+
+        public void RefreshCatalog()
+        {
+            catalog.Refresh();
+            RefreshResults();
         }
 
         internal int ResultCountForTesting
@@ -394,6 +418,7 @@ namespace Raudo
 
         private void SearchBoxTextChanged(object sender, EventArgs eventArgs)
         {
+            ResetFooterStatus();
             RefreshResults();
         }
 
@@ -406,13 +431,16 @@ namespace Raudo
                     searchBox.Handle,
                     setCueBanner,
                     new IntPtr(1),
-                    "Buscar una acción");
+                    "Buscar ventanas, aplicaciones o acciones");
             }
         }
 
         private void RefreshResults()
         {
-            IList<RaudoAction> matches = catalog.Search(searchBox.Text);
+            string query = searchBox.Text ?? string.Empty;
+            bool queryEmpty = string.IsNullOrWhiteSpace(query);
+            sectionLabel.Text = queryEmpty ? "ACCIONES" : "RESULTADOS";
+            IList<RaudoAction> matches = catalog.Search(query);
             string selectedId = SelectedActionIdForTesting;
             resultList.BeginUpdate();
             resultList.Items.Clear();
@@ -444,6 +472,22 @@ namespace Raudo
 
             resultList.Visible = resultList.Items.Count > 0;
             emptyLabel.Visible = resultList.Items.Count == 0;
+            if (resultList.Items.Count == 0)
+            {
+                if (!queryEmpty && applicationsLoading)
+                {
+                    emptyLabel.Text = "Preparando aplicaciones…";
+                }
+                else if (!queryEmpty
+                    && !string.IsNullOrWhiteSpace(applicationCatalogError))
+                {
+                    emptyLabel.Text = "No se pudo consultar el catálogo de aplicaciones";
+                }
+                else
+                {
+                    emptyLabel.Text = "No hay resultados que coincidan";
+                }
+            }
         }
 
         private void MoveSelection(int direction)
@@ -482,8 +526,46 @@ namespace Raudo
                 return;
             }
 
+            string query = searchBox.Text;
             HideSalto();
-            BeginInvoke(new MethodInvoker(action.Execute));
+            BeginInvoke(new MethodInvoker(delegate
+            {
+                string error = action.Execute();
+                if (!string.IsNullOrWhiteSpace(error) && !IsDisposed)
+                {
+                    ShowExecutionError(query, error);
+                }
+            }));
+        }
+
+        private void ShowExecutionError(string query, string error)
+        {
+            catalog.Refresh();
+            searchBox.Text = query ?? string.Empty;
+            RefreshResults();
+            PositionOnForegroundScreen();
+            Opacity = 1D;
+            if (!Visible)
+            {
+                Show();
+            }
+
+            Activate();
+            BringToFront();
+            searchBox.Focus();
+            executionError = error;
+            localLabel.Text = "●  " + error;
+            localLabel.ForeColor = palette.Danger;
+        }
+
+        private void ResetFooterStatus()
+        {
+            executionError = null;
+            localLabel.Text = "●  Raudo se ejecuta localmente";
+            if (palette != null)
+            {
+                localLabel.ForeColor = palette.TextMuted;
+            }
         }
 
         private void ResultListKeyDown(object sender, KeyEventArgs eventArgs)
