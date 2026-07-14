@@ -26,9 +26,11 @@ La copia anterior del ejecutable se conserva únicamente durante el reinicio y d
 
 ## Datos transitorios de Salto
 
-Cuando Salto se abre, Raudo consulta los títulos de las ventanas visibles y el catálogo de aplicaciones registrado por Windows. Los nombres, identificadores y la consulta escrita se conservan únicamente en memoria durante la sesión necesaria para mostrar y filtrar resultados.
+Cuando Salto se abre, Raudo consulta los títulos de las ventanas visibles, el catálogo de aplicaciones registrado por Windows y un conjunto limitado de carpetas conocidas locales. Los nombres, identificadores y la consulta escrita se conservan únicamente en memoria durante la sesión necesaria para mostrar y filtrar resultados.
 
-Raudo no lee el contenido de las ventanas, no recorre ni indexa archivos, no conserva el texto de búsqueda y no envía estos datos por la red. El catálogo de aplicaciones se prepara bajo demanda como máximo una vez por proceso.
+Los cálculos y conversiones se procesan localmente. Raudo sólo escribe el resultado en el portapapeles después de que el usuario selecciona la acción correspondiente; no lee ni conserva el contenido anterior.
+
+Raudo no lee el contenido de las ventanas, no recorre ni indexa archivos, no conserva el texto de búsqueda y no envía estos datos por la red. El catálogo de aplicaciones se prepara bajo demanda como máximo una vez por proceso. Las carpetas remotas y rutas de red no se consultan ni se muestran como accesos directos.
 
 ## Conexiones de red
 
