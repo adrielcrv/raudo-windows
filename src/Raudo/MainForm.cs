@@ -39,30 +39,13 @@ namespace Raudo
         private readonly Label titleLabel;
         private readonly Label subtitleLabel;
         private readonly LinkLabel updateLink;
-        private readonly RoundedPanel primaryCard;
-        private readonly Label featureTitleLabel;
-        private readonly Label descriptionLabel;
-        private readonly Label durationLabel;
-        private readonly DurationPicker durationSelector;
-        private readonly RoundedButton toggleButton;
-        private readonly StatusPill statusPill;
-        private readonly Label countdownLabel;
-        private readonly Label detailLabel;
-        private readonly RoundedPanel captureCard;
-        private readonly CaptureGlyph captureGlyph;
-        private readonly Label captureTitleLabel;
-        private readonly Label captureDescriptionLabel;
-        private readonly RoundedButton captureButton;
-        private readonly RoundedPanel startupCard;
-        private readonly Label miniTitleLabel;
-        private readonly Label miniDescriptionLabel;
-        private readonly ToggleSwitch miniToggle;
-        private readonly Panel preferencesDivider;
-        private readonly Label startupTitleLabel;
-        private readonly Label startupDescriptionLabel;
-        private readonly ToggleSwitch startupToggle;
+        private readonly Label pulseSectionLabel;
+        private readonly PulseSurface pulseSurface;
+        private readonly Label actionsSectionLabel;
+        private readonly ScreenCaptureSurface captureSurface;
+        private readonly Label preferencesSectionLabel;
+        private readonly PreferencesSurface preferencesSurface;
         private readonly Label trayHintLabel;
-        private readonly Label versionLabel;
         private readonly Timer visibleTimer;
         private readonly ToolTip toolTip;
 
@@ -77,228 +60,103 @@ namespace Raudo
             settings = currentSettings;
 
             Text = "Raudo";
-            AccessibleDescription = "Utilidades locales y ligeras para Windows";
-            ClientSize = new Size(540, 696);
+            AccessibleDescription = "Herramientas locales y ligeras para Windows";
+            ClientSize = new Size(520, 628);
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             MinimizeBox = true;
             StartPosition = FormStartPosition.CenterScreen;
             AutoScaleMode = AutoScaleMode.Dpi;
-            Font = new Font("Segoe UI", 9.5F, FontStyle.Regular, GraphicsUnit.Point);
+            Font = new Font("Segoe UI", 9.25F, FontStyle.Regular, GraphicsUnit.Point);
             Icon = appIcon;
 
             brandMark = new BrandMarkControl();
-            brandMark.Location = new Point(28, 23);
+            brandMark.Location = new Point(24, 18);
+            brandMark.Size = new Size(44, 44);
             Controls.Add(brandMark);
 
-            titleLabel = CreateLabel("Raudo", 21F, FontStyle.Bold, new Point(96, 19), new Size(240, 40));
+            titleLabel = CreateLabel(
+                "Raudo",
+                18F,
+                FontStyle.Bold,
+                new Point(82, 13),
+                new Size(250, 34));
             Controls.Add(titleLabel);
 
             subtitleLabel = CreateLabel(
-                "Utilidades rápidas para Windows",
-                9.5F,
+                "Herramientas rápidas para Windows",
+                9F,
                 FontStyle.Regular,
-                new Point(98, 59),
-                new Size(280, 24));
+                new Point(83, 45),
+                new Size(280, 22));
             Controls.Add(subtitleLabel);
 
+            string version = Assembly.GetExecutingAssembly().GetName().Version.ToString(3);
             updateLink = new LinkLabel();
-            updateLink.Text = "Buscar actualizaciones";
-            updateLink.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Bold, GraphicsUnit.Point);
-            updateLink.TextAlign = ContentAlignment.MiddleRight;
-            updateLink.LinkBehavior = LinkBehavior.HoverUnderline;
-            updateLink.Location = new Point(370, 31);
-            updateLink.Size = new Size(142, 30);
+            updateLink.Text = "v" + version + "  ·  Buscar";
+            updateLink.Font = new Font(
+                "Segoe UI Semibold",
+                8.25F,
+                FontStyle.Bold,
+                GraphicsUnit.Point);
+            updateLink.TextAlign = ContentAlignment.MiddleCenter;
+            updateLink.LinkBehavior = LinkBehavior.NeverUnderline;
+            updateLink.Location = new Point(386, 24);
+            updateLink.Size = new Size(110, 32);
+            updateLink.TabIndex = 0;
             updateLink.TabStop = true;
+            updateLink.AccessibleName = "Buscar actualizaciones de Raudo";
             updateLink.LinkClicked += UpdateLinkClicked;
             Controls.Add(updateLink);
 
-            primaryCard = new RoundedPanel();
-            primaryCard.Location = new Point(28, 106);
-            primaryCard.Size = new Size(484, 286);
-            primaryCard.Radius = 16;
-            Controls.Add(primaryCard);
+            pulseSectionLabel = CreateSectionLabel("PULSO", new Point(24, 84));
+            Controls.Add(pulseSectionLabel);
 
-            featureTitleLabel = CreateLabel(
-                "Pulso",
-                14F,
-                FontStyle.Bold,
-                new Point(22, 18),
-                new Size(250, 32));
-            primaryCard.Controls.Add(featureTitleLabel);
+            pulseSurface = new PulseSurface();
+            pulseSurface.Location = new Point(24, 108);
+            pulseSurface.TabIndex = 1;
+            pulseSurface.DurationChanged += DurationSelectorChanged;
+            pulseSurface.ToggleRequested += delegate { OnToggleRequested(); };
+            Controls.Add(pulseSurface);
 
-            statusPill = new StatusPill();
-            statusPill.Font = new Font("Segoe UI Semibold", 8.5F, FontStyle.Bold, GraphicsUnit.Point);
-            statusPill.Location = new Point(362, 19);
-            statusPill.Size = new Size(100, 28);
-            statusPill.AccessibleName = "Estado de Pulso";
-            primaryCard.Controls.Add(statusPill);
+            actionsSectionLabel = CreateSectionLabel("ACCIONES", new Point(24, 304));
+            Controls.Add(actionsSectionLabel);
 
-            descriptionLabel = CreateLabel(
-                "Mantiene el equipo disponible durante tareas locales autorizadas.",
-                9.5F,
-                FontStyle.Regular,
-                new Point(23, 56),
-                new Size(430, 26));
-            primaryCard.Controls.Add(descriptionLabel);
+            captureSurface = new ScreenCaptureSurface();
+            captureSurface.Location = new Point(24, 328);
+            captureSurface.TabIndex = 2;
+            captureSurface.ActionRequested += delegate { OnScreenCaptureRequested(); };
+            Controls.Add(captureSurface);
 
-            durationLabel = CreateLabel(
-                "Duración",
-                8.5F,
-                FontStyle.Bold,
-                new Point(23, 92),
-                new Size(150, 22));
-            primaryCard.Controls.Add(durationLabel);
+            preferencesSectionLabel = CreateSectionLabel("PREFERENCIAS", new Point(24, 424));
+            Controls.Add(preferencesSectionLabel);
 
-            durationSelector = new DurationPicker();
-            durationSelector.Font = new Font("Segoe UI", 10F, FontStyle.Regular, GraphicsUnit.Point);
-            durationSelector.Location = new Point(23, 117);
-            durationSelector.Size = new Size(438, 36);
-            durationSelector.AccessibleName = "Duración de Pulso";
-            durationSelector.SelectionChanged += DurationSelectorChanged;
-            primaryCard.Controls.Add(durationSelector);
-
-            toggleButton = new RoundedButton();
-            toggleButton.Text = "Activar";
-            toggleButton.Font = new Font("Segoe UI Semibold", 10.5F, FontStyle.Bold, GraphicsUnit.Point);
-            toggleButton.Location = new Point(23, 166);
-            toggleButton.Size = new Size(438, 48);
-            toggleButton.AccessibleName = "Iniciar Pulso";
-            toggleButton.Click += delegate { OnToggleRequested(); };
-            primaryCard.Controls.Add(toggleButton);
-
-            countdownLabel = CreateLabel(
-                "Pulso listo",
-                9F,
-                FontStyle.Bold,
-                new Point(23, 231),
-                new Size(210, 24));
-            primaryCard.Controls.Add(countdownLabel);
-
-            detailLabel = CreateLabel(
-                "Sin actividad en segundo plano",
-                8.5F,
-                FontStyle.Regular,
-                new Point(224, 231),
-                new Size(237, 24));
-            detailLabel.TextAlign = ContentAlignment.MiddleRight;
-            primaryCard.Controls.Add(detailLabel);
-
-            captureCard = new RoundedPanel();
-            captureCard.Location = new Point(28, 410);
-            captureCard.Size = new Size(484, 90);
-            captureCard.Radius = 16;
-            Controls.Add(captureCard);
-
-            captureGlyph = new CaptureGlyph();
-            captureGlyph.Location = new Point(20, 23);
-            captureCard.Controls.Add(captureGlyph);
-
-            captureTitleLabel = CreateLabel(
-                "Recortar pantalla",
-                10.5F,
-                FontStyle.Bold,
-                new Point(78, 17),
-                new Size(220, 26));
-            captureCard.Controls.Add(captureTitleLabel);
-
-            captureDescriptionLabel = CreateLabel(
-                "Abre la herramienta incluida en Windows",
-                8.5F,
-                FontStyle.Regular,
-                new Point(79, 45),
-                new Size(250, 24));
-            captureCard.Controls.Add(captureDescriptionLabel);
-
-            captureButton = new RoundedButton();
-            captureButton.Text = "Recortar";
-            captureButton.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Bold, GraphicsUnit.Point);
-            captureButton.Location = new Point(362, 23);
-            captureButton.Size = new Size(100, 44);
-            captureButton.AccessibleName = "Recortar pantalla";
-            captureButton.Click += delegate { OnScreenCaptureRequested(); };
-            captureCard.Controls.Add(captureButton);
-
-            startupCard = new RoundedPanel();
-            startupCard.Location = new Point(28, 518);
-            startupCard.Size = new Size(484, 118);
-            startupCard.Radius = 16;
-            Controls.Add(startupCard);
-
-            miniTitleLabel = CreateLabel(
-                "Modo Mini",
-                9.5F,
-                FontStyle.Bold,
-                new Point(22, 10),
-                new Size(260, 25));
-            startupCard.Controls.Add(miniTitleLabel);
-
-            miniDescriptionLabel = CreateLabel(
-                "Navega entre escritorios y trae ventanas.",
-                8.5F,
-                FontStyle.Regular,
-                new Point(23, 34),
-                new Size(350, 22));
-            startupCard.Controls.Add(miniDescriptionLabel);
-
-            miniToggle = new ToggleSwitch();
-            miniToggle.Location = new Point(414, 17);
-            miniToggle.AccessibleName = "Activar Modo Mini";
-            miniToggle.CheckedChanged += MiniToggleCheckedChanged;
-            startupCard.Controls.Add(miniToggle);
-
-            preferencesDivider = new Panel();
-            preferencesDivider.Location = new Point(22, 59);
-            preferencesDivider.Size = new Size(440, 1);
-            startupCard.Controls.Add(preferencesDivider);
-
-            startupTitleLabel = CreateLabel(
-                "Iniciar con Windows",
-                9.5F,
-                FontStyle.Bold,
-                new Point(22, 64),
-                new Size(260, 25));
-            startupCard.Controls.Add(startupTitleLabel);
-
-            startupDescriptionLabel = CreateLabel(
-                "Raudo inicia apagado y permanece en la bandeja.",
-                8.5F,
-                FontStyle.Regular,
-                new Point(23, 88),
-                new Size(350, 22));
-            startupCard.Controls.Add(startupDescriptionLabel);
-
-            startupToggle = new ToggleSwitch();
-            startupToggle.Location = new Point(414, 71);
-            startupToggle.AccessibleName = "Iniciar Raudo con Windows";
-            startupToggle.CheckedChanged += StartupToggleCheckedChanged;
-            startupCard.Controls.Add(startupToggle);
+            preferencesSurface = new PreferencesSurface();
+            preferencesSurface.Location = new Point(24, 448);
+            preferencesSurface.TabIndex = 3;
+            preferencesSurface.MiniModeChanged += MiniToggleCheckedChanged;
+            preferencesSurface.StartupChanged += StartupToggleCheckedChanged;
+            Controls.Add(preferencesSurface);
 
             trayHintLabel = CreateLabel(
-                "Cerrar la ventana mantiene Raudo disponible junto al reloj.",
-                8.25F,
+                "Ctrl + Alt + Espacio abre Salto  ·  Cerrar mantiene Raudo junto al reloj.",
+                8F,
                 FontStyle.Regular,
-                new Point(30, 654),
-                new Size(370, 24));
+                new Point(25, 592),
+                new Size(470, 20));
             Controls.Add(trayHintLabel);
-
-            versionLabel = CreateLabel(
-                "v" + Assembly.GetExecutingAssembly().GetName().Version.ToString(3),
-                8.25F,
-                FontStyle.Regular,
-                new Point(432, 654),
-                new Size(78, 24));
-            versionLabel.TextAlign = ContentAlignment.MiddleRight;
-            Controls.Add(versionLabel);
 
             visibleTimer = new Timer();
             visibleTimer.Interval = 1000;
             visibleTimer.Tick += delegate { RefreshState(); };
 
             toolTip = new ToolTip();
-            toolTip.SetToolTip(updateLink, "Consulta manualmente la última versión publicada en GitHub");
-            toolTip.SetToolTip(startupToggle, "Inicia Raudo en la bandeja, siempre apagado");
-            toolTip.SetToolTip(miniToggle, "Muestra una burbuja para navegar entre escritorios");
+            toolTip.SetToolTip(
+                updateLink,
+                "Consulta manualmente la última versión publicada en GitHub");
+            toolTip.SetToolTip(
+                preferencesSurface,
+                "Preferencias locales de Raudo");
 
             FormClosing += MainFormClosing;
             Resize += MainFormResize;
@@ -322,20 +180,20 @@ namespace Raudo
 
         public void SelectDuration(int minutes)
         {
-            durationSelector.SetSelected(minutes, false);
+            pulseSurface.SetSelectedDuration(minutes, false);
         }
 
         public void SetStartupChecked(bool enabled)
         {
             suppressStartupChange = true;
-            startupToggle.Checked = enabled;
+            preferencesSurface.StartupEnabled = enabled;
             suppressStartupChange = false;
         }
 
         public void SetMiniModeChecked(bool enabled)
         {
             suppressMiniModeChange = true;
-            miniToggle.Checked = enabled;
+            preferencesSurface.MiniModeEnabled = enabled;
             suppressMiniModeChange = false;
         }
 
@@ -349,37 +207,19 @@ namespace Raudo
             titleLabel.ForeColor = palette.Text;
             subtitleLabel.ForeColor = palette.TextMuted;
             trayHintLabel.ForeColor = palette.TextFaint;
-            versionLabel.ForeColor = palette.TextFaint;
-            updateLink.LinkColor = palette.Primary;
-            updateLink.ActiveLinkColor = palette.PrimaryHover;
-            updateLink.VisitedLinkColor = palette.Primary;
+            pulseSectionLabel.ForeColor = palette.TextFaint;
+            actionsSectionLabel.ForeColor = palette.TextFaint;
+            preferencesSectionLabel.ForeColor = palette.TextFaint;
 
-            ApplyCardTheme(primaryCard);
-            ApplyCardTheme(captureCard);
-            ApplyCardTheme(startupCard);
+            updateLink.BackColor = palette.Window;
+            updateLink.LinkColor = palette.TextMuted;
+            updateLink.ActiveLinkColor = palette.Primary;
+            updateLink.VisitedLinkColor = palette.TextMuted;
 
-            featureTitleLabel.ForeColor = palette.Text;
-            descriptionLabel.ForeColor = palette.TextMuted;
-            durationLabel.ForeColor = palette.TextFaint;
-            countdownLabel.ForeColor = palette.Text;
-            detailLabel.ForeColor = palette.TextMuted;
-            captureTitleLabel.ForeColor = palette.Text;
-            captureDescriptionLabel.ForeColor = palette.TextMuted;
-            startupTitleLabel.ForeColor = palette.Text;
-            startupDescriptionLabel.ForeColor = palette.TextMuted;
-            miniTitleLabel.ForeColor = palette.Text;
-            miniDescriptionLabel.ForeColor = palette.TextMuted;
-            preferencesDivider.BackColor = palette.Border;
-
-            durationSelector.ForeColor = palette.Text;
-            durationSelector.ApplyTheme(palette);
             brandMark.ApplyTheme(palette);
-            captureGlyph.ApplyTheme(palette);
-            startupToggle.ApplyTheme(palette);
-            miniToggle.ApplyTheme(palette);
-
-            captureButton.NormalColor = palette.Primary;
-            captureButton.HoverColor = palette.PrimaryHover;
+            pulseSurface.ApplyTheme(palette);
+            captureSurface.ApplyTheme(palette);
+            preferencesSurface.ApplyTheme(palette);
             RefreshState();
             ResumeLayout();
 
@@ -392,30 +232,15 @@ namespace Raudo
         public void RefreshState()
         {
             bool active = keepActiveService.IsActive;
-            durationSelector.Enabled = !active;
-            toggleButton.Text = active
-                ? "Detener Pulso"
-                : "Iniciar por " + DurationOption.GetLabel(settings.DurationMinutes).ToLowerInvariant();
-            toggleButton.AccessibleName = active
-                ? "Detener Pulso"
-                : "Iniciar Pulso por " + DurationOption.GetLabel(settings.DurationMinutes).ToLowerInvariant();
-            toggleButton.NormalColor = active ? palette.Danger : palette.Primary;
-            toggleButton.HoverColor = active ? palette.DangerHover : palette.PrimaryHover;
-            statusPill.SetState(active, palette);
-
-            if (active)
-            {
-                TimeSpan remaining = keepActiveService.GetRemaining() ?? TimeSpan.Zero;
-                countdownLabel.Text = "Restante  " + FormatClock(remaining);
-                detailLabel.Text = keepActiveService.PulseCount == 0
-                    ? "Actúa después de 45 s sin entrada"
-                    : string.Format("Entradas mínimas: {0}", keepActiveService.PulseCount);
-            }
-            else
-            {
-                countdownLabel.Text = keepActiveService.StatusMessage;
-                detailLabel.Text = "Sin actividad en segundo plano";
-            }
+            TimeSpan remaining = active
+                ? keepActiveService.GetRemaining() ?? TimeSpan.Zero
+                : TimeSpan.Zero;
+            pulseSurface.SetState(
+                active,
+                settings.DurationMinutes,
+                remaining,
+                keepActiveService.PulseCount,
+                keepActiveService.StatusMessage);
 
             if (Visible && active)
             {
@@ -455,6 +280,13 @@ namespace Raudo
         public void HideToTrayImmediately()
         {
             HideToTray();
+        }
+
+        public void SetSaltoShortcutAvailable(bool available)
+        {
+            trayHintLabel.Text = available
+                ? "Ctrl + Alt + Espacio abre Salto  ·  Cerrar mantiene Raudo junto al reloj."
+                : "Abre Salto desde la bandeja  ·  Cerrar mantiene Raudo junto al reloj.";
         }
 
         protected override void OnHandleCreated(EventArgs eventArgs)
@@ -521,29 +353,21 @@ namespace Raudo
             return label;
         }
 
-        private void ApplyCardTheme(RoundedPanel card)
+        private static Label CreateSectionLabel(string text, Point location)
         {
-            card.BackColor = palette.Surface;
-            card.BorderColor = palette.Border;
-        }
-
-        private static string FormatClock(TimeSpan remaining)
-        {
-            if (remaining < TimeSpan.Zero)
-            {
-                remaining = TimeSpan.Zero;
-            }
-
-            return string.Format(
-                "{0:00}:{1:00}:{2:00}",
-                (int)remaining.TotalHours,
-                remaining.Minutes,
-                remaining.Seconds);
+            Label label = CreateLabel(
+                text,
+                7.75F,
+                FontStyle.Bold,
+                location,
+                new Size(180, 20));
+            label.AccessibleRole = AccessibleRole.StaticText;
+            return label;
         }
 
         private void DurationSelectorChanged(object sender, EventArgs eventArgs)
         {
-            int minutes = durationSelector.SelectedMinutes;
+            int minutes = pulseSurface.SelectedMinutes;
             if (minutes != settings.DurationMinutes)
             {
                 EventHandler<DurationChangedEventArgs> handler = DurationChanged;
@@ -564,7 +388,9 @@ namespace Raudo
             EventHandler<StartupChangedEventArgs> handler = StartupChanged;
             if (handler != null)
             {
-                handler(this, new StartupChangedEventArgs(startupToggle.Checked));
+                handler(
+                    this,
+                    new StartupChangedEventArgs(preferencesSurface.StartupEnabled));
             }
         }
 
@@ -578,7 +404,9 @@ namespace Raudo
             EventHandler<MiniModeChangedEventArgs> handler = MiniModeChanged;
             if (handler != null)
             {
-                handler(this, new MiniModeChangedEventArgs(miniToggle.Checked));
+                handler(
+                    this,
+                    new MiniModeChangedEventArgs(preferencesSurface.MiniModeEnabled));
             }
         }
 
@@ -626,7 +454,7 @@ namespace Raudo
                     if (installChoice == DialogResult.Yes)
                     {
                         updateLink.Enabled = false;
-                        updateLink.Text = "Preparando actualización…";
+                        updateLink.Text = "Preparando…";
                         UpdateInstallResult install = await UpdateService.InstallAsync(result);
                         if (install.Started)
                         {

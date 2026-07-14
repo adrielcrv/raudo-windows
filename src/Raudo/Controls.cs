@@ -145,7 +145,7 @@ namespace Raudo
         }
     }
 
-    internal sealed class RoundedPanel : Panel
+    internal class RoundedPanel : Panel
     {
         private Color borderColor;
 
@@ -201,6 +201,13 @@ namespace Raudo
         }
     }
 
+    internal enum ButtonGlyph
+    {
+        None,
+        Play,
+        Stop
+    }
+
     internal sealed class RoundedButton : Control
     {
         private bool pointerOver;
@@ -208,6 +215,8 @@ namespace Raudo
         private bool keyboardDown;
         private Color normalColor;
         private Color hoverColor;
+        private Color focusColor;
+        private ButtonGlyph glyph;
 
         public RoundedButton()
         {
@@ -223,6 +232,7 @@ namespace Raudo
             Cursor = Cursors.Hand;
             Radius = 9;
             ForeColor = Color.White;
+            focusColor = Color.White;
             TabStop = true;
             AccessibleRole = AccessibleRole.PushButton;
         }
@@ -245,6 +255,26 @@ namespace Raudo
             set
             {
                 hoverColor = value;
+                Invalidate();
+            }
+        }
+
+        public ButtonGlyph Glyph
+        {
+            get { return glyph; }
+            set
+            {
+                glyph = value;
+                Invalidate();
+            }
+        }
+
+        public Color FocusColor
+        {
+            get { return focusColor; }
+            set
+            {
+                focusColor = value;
                 Invalidate();
             }
         }
@@ -338,15 +368,70 @@ namespace Raudo
             using (StringFormat format = new StringFormat())
             {
                 eventArgs.Graphics.FillPath(brush, path);
-                format.Alignment = StringAlignment.Center;
                 format.LineAlignment = StringAlignment.Center;
-                eventArgs.Graphics.DrawString(Text, Font, textBrush, bounds, format);
+                if (Glyph == ButtonGlyph.None)
+                {
+                    format.Alignment = StringAlignment.Center;
+                    eventArgs.Graphics.DrawString(Text, Font, textBrush, bounds, format);
+                }
+                else
+                {
+                    SizeF textSize = eventArgs.Graphics.MeasureString(Text, Font);
+                    const float glyphSize = 12F;
+                    const float gap = 9F;
+                    float contentWidth = glyphSize + gap + textSize.Width;
+                    float left = (Width - contentWidth) / 2F;
+                    float top = (Height - glyphSize) / 2F;
+                    DrawGlyph(eventArgs.Graphics, textBrush.Color, left, top, glyphSize);
+                    format.Alignment = StringAlignment.Near;
+                    eventArgs.Graphics.DrawString(
+                        Text,
+                        Font,
+                        textBrush,
+                        new RectangleF(
+                            left + glyphSize + gap,
+                            0F,
+                            Math.Max(1F, Width - left - glyphSize - gap),
+                            Height),
+                        format);
+                }
             }
 
             if (Focused && ShowFocusCues)
             {
                 Rectangle focus = Rectangle.Inflate(bounds, -4, -4);
-                ControlPaint.DrawFocusRectangle(eventArgs.Graphics, focus, Color.White, fill);
+                ControlPaint.DrawFocusRectangle(eventArgs.Graphics, focus, FocusColor, fill);
+            }
+        }
+
+        private void DrawGlyph(
+            Graphics graphics,
+            Color color,
+            float left,
+            float top,
+            float size)
+        {
+            using (SolidBrush brush = new SolidBrush(color))
+            {
+                if (Glyph == ButtonGlyph.Stop)
+                {
+                    float stopSize = size * 0.72F;
+                    graphics.FillRectangle(
+                        brush,
+                        left + ((size - stopSize) / 2F),
+                        top + ((size - stopSize) / 2F),
+                        stopSize,
+                        stopSize);
+                    return;
+                }
+
+                PointF[] triangle =
+                {
+                    new PointF(left + 1F, top),
+                    new PointF(left + size, top + (size / 2F)),
+                    new PointF(left + 1F, top + size)
+                };
+                graphics.FillPolygon(brush, triangle);
             }
         }
     }
@@ -578,24 +663,19 @@ namespace Raudo
         {
             ThemePalette colors = palette ?? ThemeService.Current();
             eventArgs.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            Color fill = active ? colors.ActiveSoft : colors.SurfaceRaised;
             Color text = active ? colors.Active : colors.TextMuted;
-            Rectangle bounds = new Rectangle(0, 0, Width - 1, Height - 1);
 
-            using (GraphicsPath path = DrawingPaths.RoundedRectangle(bounds, Height / 2))
-            using (SolidBrush fillBrush = new SolidBrush(fill))
             using (SolidBrush dotBrush = new SolidBrush(text))
             using (SolidBrush textBrush = new SolidBrush(text))
             using (StringFormat format = new StringFormat())
             {
-                eventArgs.Graphics.FillPath(fillBrush, path);
-                eventArgs.Graphics.FillEllipse(dotBrush, 11, (Height - 7) / 2, 7, 7);
+                eventArgs.Graphics.FillEllipse(dotBrush, 1, (Height - 7) / 2, 7, 7);
                 format.LineAlignment = StringAlignment.Center;
                 eventArgs.Graphics.DrawString(
                     active ? "Activo" : "Inactivo",
                     Font,
                     textBrush,
-                    new RectangleF(25, 0, Width - 29, Height),
+                    new RectangleF(16, 0, Width - 16, Height),
                     format);
             }
         }
@@ -723,7 +803,11 @@ namespace Raudo
         {
             ThemePalette colors = palette ?? ThemeService.Current();
             Rectangle bounds = new Rectangle(1, 1, Width - 2, Height - 2);
-            BrandDrawing.DrawMark(eventArgs.Graphics, bounds, colors.Primary, Color.White);
+            BrandDrawing.DrawMark(
+                eventArgs.Graphics,
+                bounds,
+                colors.Primary,
+                colors.PrimaryForeground);
         }
     }
 

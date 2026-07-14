@@ -5,10 +5,18 @@ Utilidades locales y ligeras para Windows.
 USO
 
 1. Ejecuta Raudo.exe.
-2. Elige una duración e inicia Pulso.
-3. Cierra la ventana para conservar Raudo junto al reloj.
-4. Activa Modo Mini para navegar entre escritorios y traer ventanas.
-5. Usa Salir de Raudo en el menú de la bandeja para terminar el proceso.
+2. Presiona Ctrl + Alt + Espacio para abrir Salto y buscar una acción.
+3. Elige una duración e inicia Pulso cuando lo necesites.
+4. Cierra la ventana para conservar Raudo junto al reloj.
+5. Activa Modo Mini para navegar entre escritorios y traer ventanas.
+6. Usa Salir de Raudo en el menú de la bandeja para terminar el proceso.
+
+SALTO
+
+Salto busca únicamente dentro del catálogo local de Raudo. Permite controlar
+Pulso, abrir Recortes, mostrar la ventana principal, controlar Modo Mini y
+cambiar entre los escritorios disponibles. Si Ctrl + Alt + Espacio ya pertenece
+a otra aplicación, Salto permanece disponible desde la bandeja.
 
 MODO MINI
 

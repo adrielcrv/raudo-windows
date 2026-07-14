@@ -237,6 +237,28 @@ namespace Raudo
         [DllImport("user32.dll", SetLastError = true)]
         internal static extern uint SendInput(uint inputCount, [In] Input[] inputs, int inputSize);
 
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool RegisterHotKey(
+            IntPtr window,
+            int id,
+            uint modifiers,
+            uint virtualKey);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool UnregisterHotKey(IntPtr window, int id);
+
+        [DllImport("user32.dll")]
+        internal static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        internal static extern IntPtr SendMessage(
+            IntPtr window,
+            int message,
+            IntPtr parameter,
+            string value);
+
         [DllImport("user32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool GetLastInputInfo(ref LastInputInfo info);
