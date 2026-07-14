@@ -2860,6 +2860,35 @@ internal static class TestRunner
                 Path.Combine(approvedUpdateDirectory, "nested")),
             "El actualizador aceptó una carpeta fuera del nivel controlado.");
 
+        ProcessStartInfo finishedParentStart = new ProcessStartInfo();
+        finishedParentStart.FileName = Environment.GetEnvironmentVariable("ComSpec");
+        finishedParentStart.Arguments = "/d /c exit 0";
+        finishedParentStart.UseShellExecute = false;
+        finishedParentStart.CreateNoWindow = true;
+        using (Process finishedParent = Process.Start(finishedParentStart))
+        {
+            finishedParent.WaitForExit();
+            UpdateInstaller.WaitForParentProcess(finishedParent, installedPath);
+        }
+
+        bool rejectedUnverifiedParent = false;
+        using (Process currentProcess = Process.GetCurrentProcess())
+        {
+            try
+            {
+                UpdateInstaller.WaitForParentProcess(
+                    currentProcess,
+                    Path.Combine(root, "otro-proceso.exe"));
+            }
+            catch (InvalidOperationException)
+            {
+                rejectedUnverifiedParent = true;
+            }
+        }
+        Assert(
+            rejectedUnverifiedParent,
+            "El actualizador aceptó un proceso activo cuya ruta no coincide.");
+
         string hashFixture = Path.GetTempFileName();
         try
         {

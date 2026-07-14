@@ -4,6 +4,12 @@ Este proyecto utiliza versionado semántico.
 
 ## [Sin publicar]
 
+## [1.9.1] - 2026-07-14
+
+- Actualización más robusta cuando Raudo termina justo mientras Windows verifica el proceso que solicitó el reemplazo.
+- Validación cerrada ante fallos de acceso: una ruta que no puede comprobarse mientras el proceso sigue activo continúa bloqueando la actualización.
+- Cobertura para procesos ya terminados y para el rechazo de procesos activos cuya ruta no coincide con la instalación.
+
 ## [1.9.0] - 2026-07-14
 
 - Bienvenida visual para la primera ejecución y resumen de novedades después de actualizar, disponible nuevamente desde el menú de bandeja.
