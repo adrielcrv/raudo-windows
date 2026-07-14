@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
@@ -165,26 +166,91 @@ namespace Raudo
 
             using (parent)
             {
-                string processPath;
-                try
+                WaitForParentProcess(parent, expectedPath);
+            }
+        }
+
+        internal static void WaitForParentProcess(Process parent, string expectedPath)
+        {
+            if (HasExited(parent))
+            {
+                return;
+            }
+
+            string processPath;
+            try
+            {
+                processPath = parent.MainModule.FileName;
+            }
+            catch (InvalidOperationException exception)
+            {
+                if (HasExited(parent))
                 {
-                    processPath = parent.MainModule.FileName;
-                }
-                catch (InvalidOperationException)
-                {
-                    processPath = null;
+                    return;
                 }
 
-                if (!PathsEqual(processPath, expectedPath))
+                throw CreateParentVerificationException(exception);
+            }
+            catch (Win32Exception exception)
+            {
+                if (HasExited(parent))
                 {
-                    throw new InvalidOperationException("El proceso que solicitó la actualización no coincide.");
+                    return;
                 }
 
+                throw CreateParentVerificationException(exception);
+            }
+
+            if (!PathsEqual(processPath, expectedPath))
+            {
+                throw new InvalidOperationException("El proceso que solicitó la actualización no coincide.");
+            }
+
+            try
+            {
                 if (!parent.WaitForExit(ParentExitTimeoutMilliseconds))
                 {
                     throw new TimeoutException("Raudo no se cerró a tiempo para actualizarse.");
                 }
             }
+            catch (InvalidOperationException exception)
+            {
+                if (!HasExited(parent))
+                {
+                    throw CreateParentVerificationException(exception);
+                }
+            }
+            catch (Win32Exception exception)
+            {
+                if (!HasExited(parent))
+                {
+                    throw CreateParentVerificationException(exception);
+                }
+            }
+        }
+
+        private static bool HasExited(Process process)
+        {
+            try
+            {
+                return process.HasExited;
+            }
+            catch (InvalidOperationException)
+            {
+                return true;
+            }
+            catch (Win32Exception)
+            {
+                return false;
+            }
+        }
+
+        private static InvalidOperationException CreateParentVerificationException(
+            Exception innerException)
+        {
+            return new InvalidOperationException(
+                "Windows no permitió verificar el proceso que solicitó la actualización.",
+                innerException);
         }
 
         private static void ReplaceExecutable(string source, string target, string previous)
