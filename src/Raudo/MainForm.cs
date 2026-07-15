@@ -71,7 +71,7 @@ namespace Raudo
             MaximizeBox = false;
             MinimizeBox = true;
             StartPosition = FormStartPosition.CenterScreen;
-            AutoScaleMode = AutoScaleMode.Dpi;
+            AutoScaleMode = AutoScaleMode.None;
             AutoScroll = true;
             Font = new Font("Segoe UI", 9.25F, FontStyle.Regular, GraphicsUnit.Point);
             Icon = appIcon;

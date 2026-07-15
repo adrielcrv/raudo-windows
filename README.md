@@ -72,11 +72,13 @@ que el contenido, conserva el acceso mediante desplazamiento vertical.
 ### Voz
 
 - Escucha una orden al presionar `Ctrl + Alt + V` o seleccionar **Hablar con Raudo**; no mantiene un micrófono abierto ni una palabra de activación en segundo plano.
-- Utiliza el reconocimiento de gramática de Windows con un catálogo local y cerrado de órdenes en español.
+- Utiliza el reconocimiento de gramática de Windows con un catálogo local y cerrado de órdenes en español e inglés.
+- Sigue automáticamente el idioma de voz configurado en Windows cuando corresponde a un idioma instalado en español o inglés.
 - Puede abrir aplicaciones instaladas, Salto, Raudo, YouTube o una búsqueda del clima; controlar Pulso, multimedia y volumen; recortar pantalla; crear o cambiar escritorios; calcular y convertir unidades.
+- En inglés reconoce las mismas categorías, por ejemplo **open Excel**, **next desktop**, **turn on Pulse** o **what is 12 times 8**.
 - Reconoce alias localizados de aplicaciones, por ejemplo **Bloc de notas**, aunque Windows exponga el nombre instalado en otro idioma.
 - Si una orden no se entiende o no coincide con una acción segura, vuelve a escuchar una vez en la misma sesión.
-- Requiere un idioma de voz en español instalado en Windows y permiso de micrófono para aplicaciones de escritorio.
+- Requiere un idioma de voz en español o inglés instalado en Windows y permiso de micrófono para aplicaciones de escritorio.
 - El audio y el texto reconocido son transitorios: Raudo no los almacena, no conserva historial y no los envía a un servicio remoto.
 
 ### Multimedia
