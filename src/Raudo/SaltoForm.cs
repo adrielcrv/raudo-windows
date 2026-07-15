@@ -3,7 +3,10 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
+using Timer = System.Windows.Forms.Timer;
 
 namespace Raudo
 {
@@ -41,9 +44,11 @@ namespace Raudo
         private const int OpeningDurationMilliseconds = 140;
         private const int PresentationDurationMilliseconds = 167;
         private const int LoadingIntervalMilliseconds = 333;
+        private const int ClipboardLoadingDelayMilliseconds = 120;
         private readonly RaudoActionCatalog catalog;
         private readonly RaudoSettings settings;
         private readonly Func<bool> animationsEnabled;
+        private readonly IClipboardHistoryProvider clipboardHistoryProvider;
         private readonly RoundedPanel searchSurface;
         private readonly SaltoSearchGlyph searchGlyph;
         private readonly TextBox searchBox;
@@ -63,8 +68,10 @@ namespace Raudo
         private readonly Timer presentationTimer;
         private readonly Stopwatch presentationWatch;
         private readonly Timer loadingTimer;
+        private readonly Timer clipboardLoadingDelayTimer;
 
         private ThemePalette palette;
+        private DpiMetrics dpiMetrics;
         private bool allowClose;
         private bool applicationsLoading;
         private string applicationCatalogError;
@@ -83,17 +90,21 @@ namespace Raudo
         private bool applyingAdaptiveLayout;
         private bool adaptiveControlsReady;
         private bool suppressLayoutScaleRefresh;
+        private CancellationTokenSource clipboardQueryCancellation;
+        private int clipboardQueryGeneration;
+        private ClipboardHistorySessionPhase clipboardPhase;
+        private ClipboardHistoryQueryStatus clipboardQueryStatus;
 
         public event EventHandler<SaltoPositionChangedEventArgs> PositionChangedByUser;
         public event EventHandler<SaltoOpacityChangedEventArgs> OpacityChangedByUser;
 
         public SaltoForm(RaudoActionCatalog actionCatalog)
-            : this(actionCatalog, new RaudoSettings(), null)
+            : this(actionCatalog, new RaudoSettings(), null, null)
         {
         }
 
         public SaltoForm(RaudoActionCatalog actionCatalog, RaudoSettings currentSettings)
-            : this(actionCatalog, currentSettings, null)
+            : this(actionCatalog, currentSettings, null, null)
         {
         }
 
@@ -101,6 +112,15 @@ namespace Raudo
             RaudoActionCatalog actionCatalog,
             RaudoSettings currentSettings,
             Func<bool> motionSetting)
+            : this(actionCatalog, currentSettings, motionSetting, null)
+        {
+        }
+
+        internal SaltoForm(
+            RaudoActionCatalog actionCatalog,
+            RaudoSettings currentSettings,
+            Func<bool> motionSetting,
+            IClipboardHistoryProvider historyProvider)
         {
             if (actionCatalog == null)
             {
@@ -115,7 +135,9 @@ namespace Raudo
             catalog = actionCatalog;
             settings = currentSettings;
             animationsEnabled = motionSetting ?? MotionSettings.ClientAreaAnimationsEnabled;
+            clipboardHistoryProvider = historyProvider ?? new ClipboardHistoryProvider();
             settings.Normalize();
+            dpiMetrics = DpiMetrics.ForDpi(DpiMetrics.DefaultDpi);
             Text = "Salto · Raudo";
             AccessibleName = "Salto de Raudo";
             AccessibleDescription =
@@ -262,6 +284,10 @@ namespace Raudo
             loadingTimer.Interval = LoadingIntervalMilliseconds;
             loadingTimer.Tick += LoadingTimerTick;
 
+            clipboardLoadingDelayTimer = new Timer();
+            clipboardLoadingDelayTimer.Interval = ClipboardLoadingDelayMilliseconds;
+            clipboardLoadingDelayTimer.Tick += ClipboardLoadingDelayTimerTick;
+
             toolTip = new ToolTip();
             toolTip.AutoPopDelay = 6000;
             toolTip.InitialDelay = 450;
@@ -357,6 +383,7 @@ namespace Raudo
 
         public void HideSalto()
         {
+            CancelClipboardQuery(true);
             openingTimer.Stop();
             openingWatch.Reset();
             presentationTimer.Stop();
@@ -391,7 +418,7 @@ namespace Raudo
             applicationsLoading = loading;
             applicationCatalogError = error;
             UpdateLoadingPresentation();
-            if (Visible)
+            if (Visible && !ClipboardModeActive)
             {
                 RefreshResults();
             }
@@ -400,7 +427,10 @@ namespace Raudo
         public void RefreshCatalog()
         {
             catalog.Refresh();
-            RefreshResults();
+            if (!ClipboardModeActive)
+            {
+                RefreshResults();
+            }
         }
 
         internal int ResultCountForTesting
@@ -531,6 +561,40 @@ namespace Raudo
             }
         }
 
+        internal RaudoActionKind? SelectedActionKindForTesting
+        {
+            get
+            {
+                RaudoAction selected = resultList.SelectedItem as RaudoAction;
+                return selected == null ? (RaudoActionKind?)null : selected.Kind;
+            }
+        }
+
+        internal bool ClipboardModeForTesting
+        {
+            get { return ClipboardModeActive; }
+        }
+
+        internal bool ClipboardQueryPendingForTesting
+        {
+            get { return ClipboardQueryPending; }
+        }
+
+        internal ClipboardHistoryQueryStatus ClipboardStatusForTesting
+        {
+            get { return clipboardQueryStatus; }
+        }
+
+        internal void ShowClipboardLoadingForTesting()
+        {
+            ClipboardLoadingDelayTimerTick(this, EventArgs.Empty);
+        }
+
+        internal void ApplyDpiChangeForTesting(int dpi, Rectangle suggestedBounds)
+        {
+            ApplyDpiChange(dpi, suggestedBounds);
+        }
+
         protected override CreateParams CreateParams
         {
             get
@@ -545,6 +609,8 @@ namespace Raudo
         protected override void OnHandleCreated(EventArgs eventArgs)
         {
             base.OnHandleCreated(eventArgs);
+            dpiMetrics = DpiMetrics.FromControl(this);
+            layoutScale = dpiMetrics.ScaleFactor;
             WindowTheme.Apply(Handle, palette == null ? false : palette.IsDark);
         }
 
@@ -558,7 +624,7 @@ namespace Raudo
 
             if (Width > 1 && Height > 1)
             {
-                int radius = Math.Max(18, (int)Math.Round(18D * DeviceDpi / 96D));
+                int radius = dpiMetrics.Scale(18);
                 using (GraphicsPath path = DrawingPaths.RoundedRectangle(
                     new Rectangle(0, 0, Width, Height),
                     radius))
@@ -578,7 +644,7 @@ namespace Raudo
             base.OnPaint(eventArgs);
             eventArgs.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
             Rectangle bounds = new Rectangle(0, 0, Width - 1, Height - 1);
-            int radius = Math.Max(18, (int)Math.Round(18D * DeviceDpi / 96D));
+            int radius = dpiMetrics.Scale(18);
             using (GraphicsPath path = DrawingPaths.RoundedRectangle(bounds, radius))
             using (Pen border = new Pen(palette.Border))
             {
@@ -624,6 +690,24 @@ namespace Raudo
             return base.ProcessCmdKey(ref message, keyData);
         }
 
+        protected override void WndProc(ref Message message)
+        {
+            if (message.Msg == DpiMessage.WindowDpiChanged)
+            {
+                int nextDpi = DpiMessage.GetDpi(message);
+                Rectangle suggestedBounds = DpiMessage.GetSuggestedBounds(message);
+                presentationTimer.Stop();
+                presentationWatch.Reset();
+                dpiMetrics = DpiMetrics.ForDpi(nextDpi);
+                layoutScale = dpiMetrics.ScaleFactor;
+                base.WndProc(ref message);
+                ApplyDpiChange(nextDpi, suggestedBounds);
+                return;
+            }
+
+            base.WndProc(ref message);
+        }
+
         protected override void OnFormClosing(FormClosingEventArgs eventArgs)
         {
             if (!allowClose && eventArgs.CloseReason == CloseReason.UserClosing)
@@ -640,9 +724,11 @@ namespace Raudo
         {
             if (disposing)
             {
+                CancelClipboardQuery(true);
                 openingTimer.Dispose();
                 presentationTimer.Dispose();
                 loadingTimer.Dispose();
+                clipboardLoadingDelayTimer.Dispose();
                 toolTip.Dispose();
             }
 
@@ -672,7 +758,224 @@ namespace Raudo
         private void SearchBoxTextChanged(object sender, EventArgs eventArgs)
         {
             ResetFooterStatus();
+            string filter;
+            if (ClipboardHistoryQuery.TryParse(searchBox.Text, out filter))
+            {
+                BeginClipboardQuery(filter);
+                return;
+            }
+
+            CancelClipboardQuery(true);
             RefreshResults();
+        }
+
+        private async void BeginClipboardQuery(string filter)
+        {
+            CancelClipboardQuery(true);
+            clipboardPhase = ClipboardHistorySessionPhase.Pending;
+            clipboardQueryStatus = ClipboardHistoryQueryStatus.Success;
+            int generation = ++clipboardQueryGeneration;
+            clipboardQueryCancellation = new CancellationTokenSource();
+            CancellationToken cancellationToken = clipboardQueryCancellation.Token;
+            clipboardLoadingDelayTimer.Start();
+
+            resultList.BeginUpdate();
+            resultList.Items.Clear();
+            resultList.EndUpdate();
+            resultList.Visible = false;
+            emptyLabel.Visible = false;
+            UpdateKeyboardHint();
+            UpdateScrollIndicator();
+
+            try
+            {
+                ClipboardHistoryQueryResult result = await clipboardHistoryProvider
+                    .QueryAsync(filter, 5, cancellationToken);
+                if (cancellationToken.IsCancellationRequested
+                    || generation != clipboardQueryGeneration
+                    || IsDisposed)
+                {
+                    return;
+                }
+
+                clipboardLoadingDelayTimer.Stop();
+                clipboardPhase = ClipboardHistorySessionPhase.Results;
+                ReleaseCompletedClipboardQuery();
+                ApplyClipboardResult(result, filter, generation);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception)
+            {
+                if (!cancellationToken.IsCancellationRequested
+                    && generation == clipboardQueryGeneration
+                    && !IsDisposed)
+                {
+                    clipboardLoadingDelayTimer.Stop();
+                    clipboardPhase = ClipboardHistorySessionPhase.Results;
+                    ReleaseCompletedClipboardQuery();
+                    ApplyClipboardResult(
+                        new ClipboardHistoryQueryResult(
+                            ClipboardHistoryQueryStatus.Failed,
+                            new List<ClipboardHistoryEntry>()),
+                        filter,
+                        generation);
+                }
+            }
+        }
+
+        private void ClipboardLoadingDelayTimerTick(object sender, EventArgs eventArgs)
+        {
+            clipboardLoadingDelayTimer.Stop();
+            if (clipboardPhase != ClipboardHistorySessionPhase.Pending)
+            {
+                return;
+            }
+
+            clipboardPhase = ClipboardHistorySessionPhase.Loading;
+            resultList.Visible = false;
+            emptyLabel.Visible = true;
+            emptyLabel.Text = ClipboardLoadingText();
+            sectionLabel.Text = "PORTAPAPELES";
+            presentationMode = SaltoPresentationMode.Loading;
+            visibleResultRows = 1;
+            TransitionToPresentation(560, 216);
+            UpdateKeyboardHint();
+            UpdateLoadingPresentation();
+        }
+
+        private void ApplyClipboardResult(
+            ClipboardHistoryQueryResult result,
+            string filter,
+            int generation)
+        {
+            clipboardPhase = ClipboardHistorySessionPhase.Results;
+            clipboardQueryStatus = result.Status;
+            resultList.BeginUpdate();
+            resultList.Items.Clear();
+            if (result.Status == ClipboardHistoryQueryStatus.Success)
+            {
+                int count = Math.Min(5, result.Entries.Count);
+                for (int index = 0; index < count; index++)
+                {
+                    ClipboardHistoryEntry entry = result.Entries[index];
+                    string text = entry.Text;
+                    resultList.Items.Add(new RaudoAction(
+                        "clipboard." + generation + "." + index,
+                        entry.Preview,
+                        "Texto reciente del historial de Windows",
+                        filter,
+                        "Copiar",
+                        RaudoActionGlyph.Clipboard,
+                        RaudoActionKind.Clipboard,
+                        false,
+                        0,
+                        delegate { return ClipboardWriter.TryCopy(text); }));
+                }
+            }
+
+            resultList.EndUpdate();
+            bool hasItems = resultList.Items.Count > 0;
+            resultList.Visible = hasItems;
+            emptyLabel.Visible = !hasItems;
+            sectionLabel.Text = "PORTAPAPELES";
+            if (hasItems)
+            {
+                resultList.SelectedIndex = 0;
+                presentationMode = SaltoPresentationMode.Results;
+                visibleResultRows = Math.Min(5, resultList.Items.Count);
+                TransitionToPresentation(640, 162 + (54 * visibleResultRows));
+            }
+            else
+            {
+                emptyLabel.Text = ClipboardEmptyText(result.Status, filter);
+                presentationMode = SaltoPresentationMode.Empty;
+                visibleResultRows = 1;
+                TransitionToPresentation(560, 216);
+            }
+
+            UpdateKeyboardHint();
+            resultList.HideNativeScrollBar();
+            UpdateScrollIndicator();
+            UpdateLoadingPresentation();
+        }
+
+        private void CancelClipboardQuery(bool clearResults)
+        {
+            clipboardLoadingDelayTimer.Stop();
+            clipboardQueryGeneration++;
+            if (clipboardQueryCancellation != null)
+            {
+                clipboardQueryCancellation.Cancel();
+                clipboardQueryCancellation.Dispose();
+                clipboardQueryCancellation = null;
+            }
+
+            bool wasClipboardMode = ClipboardModeActive;
+            clipboardPhase = ClipboardHistorySessionPhase.Inactive;
+            if (clearResults && wasClipboardMode && resultList != null)
+            {
+                resultList.Items.Clear();
+            }
+
+            UpdateLoadingPresentation();
+        }
+
+        private void ReleaseCompletedClipboardQuery()
+        {
+            if (clipboardQueryCancellation != null)
+            {
+                clipboardQueryCancellation.Dispose();
+                clipboardQueryCancellation = null;
+            }
+        }
+
+        private bool ClipboardModeActive
+        {
+            get { return clipboardPhase != ClipboardHistorySessionPhase.Inactive; }
+        }
+
+        private bool ClipboardQueryPending
+        {
+            get
+            {
+                return clipboardPhase == ClipboardHistorySessionPhase.Pending
+                    || clipboardPhase == ClipboardHistorySessionPhase.Loading;
+            }
+        }
+
+        private bool ClipboardLoadingVisible
+        {
+            get { return clipboardPhase == ClipboardHistorySessionPhase.Loading; }
+        }
+
+        private static string ClipboardEmptyText(
+            ClipboardHistoryQueryStatus status,
+            string filter)
+        {
+            switch (status)
+            {
+                case ClipboardHistoryQueryStatus.Disabled:
+                    return "Activa el historial de Windows con Win + V";
+                case ClipboardHistoryQueryStatus.AccessDenied:
+                    return "Windows bloqueó el acceso al historial";
+                case ClipboardHistoryQueryStatus.Unavailable:
+                    return "El historial no está disponible en esta versión de Windows";
+                case ClipboardHistoryQueryStatus.Failed:
+                    return "Windows no pudo consultar el historial";
+                default:
+                    return string.IsNullOrWhiteSpace(filter)
+                        ? "No hay textos recientes en el historial"
+                        : "No hay textos recientes que coincidan";
+            }
+        }
+
+        private string ClipboardLoadingText()
+        {
+            return AnimationsEnabled()
+                ? "Consultando historial" + new string('·', loadingFrame + 1)
+                : "Consultando historial…";
         }
 
         private void ApplySearchCue()
@@ -690,6 +993,11 @@ namespace Raudo
 
         private void RefreshResults()
         {
+            if (ClipboardModeActive)
+            {
+                return;
+            }
+
             string query = searchBox.Text ?? string.Empty;
             bool queryEmpty = string.IsNullOrWhiteSpace(query);
             sectionLabel.Text = queryEmpty ? "ACCIONES" : "RESULTADOS";
@@ -763,6 +1071,7 @@ namespace Raudo
             {
                 case RaudoActionKind.Calculation:
                 case RaudoActionKind.Conversion:
+                case RaudoActionKind.Clipboard:
                     verb = "copiar";
                     break;
                 case RaudoActionKind.Window:
@@ -1042,6 +1351,40 @@ namespace Raudo
             presentationTimer.Start();
         }
 
+        private void ApplyDpiChange(int dpi, Rectangle suggestedBounds)
+        {
+            presentationTimer.Stop();
+            presentationWatch.Reset();
+            dpiMetrics = DpiMetrics.ForDpi(dpi);
+            layoutScale = dpiMetrics.ScaleFactor;
+
+            Rectangle reference = suggestedBounds.IsEmpty ? Bounds : suggestedBounds;
+            Screen destination = Screen.FromRectangle(reference);
+            Size targetSize = dpiMetrics.Scale(new Size(
+                logicalPresentationWidth,
+                logicalPresentationHeight));
+            Rectangle target = ClampWindowBounds(
+                new Rectangle(
+                    reference.Left + ((reference.Width - targetSize.Width) / 2),
+                    reference.Top,
+                    targetSize.Width,
+                    targetSize.Height),
+                destination.WorkingArea);
+
+            suppressLayoutScaleRefresh = true;
+            try
+            {
+                Bounds = target;
+            }
+            finally
+            {
+                suppressLayoutScaleRefresh = false;
+            }
+
+            ApplyAdaptiveLayout();
+            Invalidate(true);
+        }
+
         private void PresentationTimerTick(object sender, EventArgs eventArgs)
         {
             double progress = Math.Min(
@@ -1249,8 +1592,10 @@ namespace Raudo
                 return;
             }
 
+            bool loadingVisible = ClipboardLoadingVisible
+                || (applicationsLoading && !ClipboardModeActive);
             bool animate = Visible
-                && applicationsLoading
+                && loadingVisible
                 && presentationMode != SaltoPresentationMode.Answer
                 && AnimationsEnabled();
             if (animate)
@@ -1270,7 +1615,9 @@ namespace Raudo
             UpdateFooterText();
             if (presentationMode == SaltoPresentationMode.Loading)
             {
-                emptyLabel.Text = LoadingText();
+                emptyLabel.Text = ClipboardLoadingVisible
+                    ? ClipboardLoadingText()
+                    : LoadingText();
             }
         }
 
@@ -1280,7 +1627,9 @@ namespace Raudo
             UpdateFooterText();
             if (presentationMode == SaltoPresentationMode.Loading)
             {
-                emptyLabel.Text = LoadingText();
+                emptyLabel.Text = ClipboardLoadingVisible
+                    ? ClipboardLoadingText()
+                    : LoadingText();
             }
         }
 
@@ -1305,6 +1654,11 @@ namespace Raudo
             {
                 localLabel.Text = "●  " + executionError;
                 localLabel.ForeColor = palette.Danger;
+            }
+            else if (ClipboardModeActive)
+            {
+                localLabel.Text = "●  No se guarda en Raudo";
+                localLabel.ForeColor = palette.TextMuted;
             }
             else if (applicationsLoading
                 && presentationMode != SaltoPresentationMode.Answer
@@ -1474,9 +1828,9 @@ namespace Raudo
             return ClampWindowBounds(requested, screen.WorkingArea);
         }
 
-        private static Rectangle ClampWindowBounds(Rectangle requested, Rectangle area)
+        private Rectangle ClampWindowBounds(Rectangle requested, Rectangle area)
         {
-            int margin = 16;
+            int margin = dpiMetrics.Scale(16);
             int left = Math.Min(
                 Math.Max(area.Left + margin, requested.Left),
                 Math.Max(area.Left + margin, area.Right - requested.Width - margin));

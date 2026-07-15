@@ -53,6 +53,8 @@ SHA-256 o realizar una instalación no interactiva.
 - Muestra preparación únicamente mientras Windows entrega por primera vez el catálogo de aplicaciones; los cálculos y filtros locales no esperan ni muestran carga.
 - Abre carpetas conocidas de Windows sólo cuando resuelven a una ubicación local existente.
 - Copia un cálculo o conversión únicamente después de seleccionarlo.
+- Al escribir `portapapeles` o `clipboard`, consulta bajo demanda hasta cinco textos del historial administrado por Windows; puede añadirse un filtro después del comando.
+- Libera esos textos al cambiar de consulta o cerrar Salto y no mantiene un listener ni un historial propio.
 - Controla reproducción, cambio de pista, silencio y volumen mediante las teclas multimedia de Windows.
 - Permite iniciar o detener Pulso, abrir Recortes y Raudo, controlar Modo Mini y cambiar entre escritorios disponibles.
 - Se opera con flechas, `Enter`, `Escape` o un clic.
@@ -105,6 +107,7 @@ Abre la Herramienta Recortes mediante el protocolo `ms-screenclip` incluido en W
 - Consulta las ventanas de otros escritorios únicamente al abrir el selector.
 - Permite traer una ventana elegida al escritorio actual sin cerrarla.
 - Recuerda el borde y la altura elegidos; puede ocultarse desde la propia pestaña o la bandeja.
+- Conserva monitor, borde y altura relativa cuando cambia la escala, resolución o área de trabajo, y permanece visible si una pantalla se desconecta.
 - Indica el estado de la sesión sin alterar el azul de marca y recuerda los umbrales de 15 y 5 minutos.
 
 <p align="center">
@@ -117,7 +120,7 @@ La detección de ventanas utiliza la interfaz pública `IVirtualDesktopManager`.
 
 ## Privacidad y red
 
-Raudo no incluye telemetría, cuentas ni publicidad. Las búsquedas de Salto permanecen en memoria y se utilizan únicamente para filtrar resultados o producir un cálculo o conversión local; sólo se guardan la posición y el nivel de opacidad elegidos. El catálogo de aplicaciones se consulta a Windows bajo demanda; Raudo no recorre el disco ni conserva las consultas. Un resultado sólo se escribe en el portapapeles después de seleccionarlo. Las órdenes de voz utilizan una gramática local y sólo existen durante la sesión de escucha iniciada por el usuario. Los controles multimedia automáticos envían comandos fijos; al abrir el selector de Mini, Raudo consulta localmente las sesiones que Windows expone y conserva de forma transitoria el nombre de la aplicación y su estado. Raudo sólo se conecta directamente a Internet cuando el usuario selecciona **Buscar actualizaciones**. Las acciones de YouTube o clima abren el navegador predeterminado, que administra su propia conexión. En una instalación local, Raudo puede descargar el paquete oficial después de una confirmación, validar su versión y sus sumas SHA-256, reemplazar el ejecutable de forma atómica y reiniciarse. Una copia portable abre la publicación para actualización manual.
+Raudo no incluye telemetría, cuentas ni publicidad. Las búsquedas de Salto permanecen en memoria y se utilizan únicamente para filtrar resultados o producir un cálculo o conversión local; sólo se guardan la posición y el nivel de opacidad elegidos. El catálogo de aplicaciones se consulta a Windows bajo demanda; Raudo no recorre el disco ni conserva las consultas. Un resultado sólo se escribe en el portapapeles después de seleccionarlo. La consulta `portapapeles` lee explícitamente hasta cinco textos del historial administrado por Windows, los limita en memoria y los libera al salir de ese modo; no registra cambios ni crea un historial paralelo. Las órdenes de voz utilizan una gramática local y sólo existen durante la sesión de escucha iniciada por el usuario. Los controles multimedia automáticos envían comandos fijos; al abrir el selector de Mini, Raudo consulta localmente las sesiones que Windows expone y conserva de forma transitoria el nombre de la aplicación y su estado. Raudo sólo se conecta directamente a Internet cuando el usuario selecciona **Buscar actualizaciones**. Las acciones de YouTube o clima abren el navegador predeterminado, que administra su propia conexión. En una instalación local, Raudo puede descargar el paquete oficial después de una confirmación, validar su versión y sus sumas SHA-256, reemplazar el ejecutable de forma atómica y reiniciarse. Una copia portable abre la publicación para actualización manual.
 
 Consulta [PRIVACY.md](PRIVACY.md) para conocer los datos locales y el comportamiento de red.
 

@@ -22,6 +22,7 @@ namespace Raudo
         Application,
         Calculator,
         Conversion,
+        Clipboard,
         Folder,
         MediaPlayPause,
         MediaPrevious,
@@ -38,6 +39,7 @@ namespace Raudo
         Application,
         Calculation,
         Conversion,
+        Clipboard,
         Folder,
         Media
     }
@@ -427,6 +429,9 @@ namespace Raudo
                         case RaudoActionGlyph.Conversion:
                             DrawConversion(graphics, pen, left, top, scale);
                             break;
+                        case RaudoActionGlyph.Clipboard:
+                            DrawClipboard(graphics, pen, left, top, scale);
+                            break;
                         case RaudoActionGlyph.Folder:
                             DrawFolder(graphics, pen, left, top, scale);
                             break;
@@ -534,6 +539,39 @@ namespace Raudo
             graphics.DrawLine(pen, left + end, top + end, left + (end - shortSide), top + end);
             graphics.DrawLine(pen, left + (start + shortSide), top + end, left + start, top + end);
             graphics.DrawLine(pen, left + start, top + end, left + start, top + (end - shortSide));
+        }
+
+        private static void DrawClipboard(
+            Graphics graphics,
+            Pen pen,
+            float left,
+            float top,
+            float scale)
+        {
+            RectangleF body = new RectangleF(
+                left + (6F * scale),
+                top + (5F * scale),
+                12F * scale,
+                16F * scale);
+            graphics.DrawRectangle(pen, body.X, body.Y, body.Width, body.Height);
+            graphics.DrawLine(
+                pen,
+                left + (9F * scale),
+                top + (5F * scale),
+                left + (15F * scale),
+                top + (5F * scale));
+            graphics.DrawLine(
+                pen,
+                body.Left + (3F * scale),
+                body.Top + (6F * scale),
+                body.Right - (3F * scale),
+                body.Top + (6F * scale));
+            graphics.DrawLine(
+                pen,
+                body.Left + (3F * scale),
+                body.Top + (10F * scale),
+                body.Right - (4F * scale),
+                body.Top + (10F * scale));
         }
 
         private static void DrawWindow(Graphics graphics, Pen pen, float left, float top, float scale)

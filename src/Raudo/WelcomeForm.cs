@@ -69,7 +69,7 @@ namespace Raudo
 
             descriptionLabel = CreateLabel(
                 changes
-                    ? "Ahora es más fácil conocer Raudo, instalarlo y volver a su guía."
+                    ? "Salto recupera textos bajo demanda y Raudo se adapta mejor entre pantallas."
                     : "Acciones rápidas, voz local y controles discretos para trabajar en Windows.",
                 9.25F,
                 FontStyle.Regular,
@@ -392,17 +392,17 @@ namespace Raudo
             return new[]
             {
                 new WelcomeFeatureDefinition(
-                    "Bienvenida",
-                    "Funciones claras al empezar",
-                    WelcomeFeatureGlyph.Welcome),
+                    "Portapapeles",
+                    "Hasta cinco textos recientes",
+                    WelcomeFeatureGlyph.Clipboard),
                 new WelcomeFeatureDefinition(
-                    "Instalación directa",
-                    "Un ejecutable, un clic",
-                    WelcomeFeatureGlyph.Install),
+                    "Pantallas mixtas",
+                    "Mini conserva su lugar",
+                    WelcomeFeatureGlyph.Displays),
                 new WelcomeFeatureDefinition(
-                    "Siempre disponible",
-                    "La guía vive en la bandeja",
-                    WelcomeFeatureGlyph.Tray)
+                    "Bajo demanda",
+                    "Sin escucha ni historial propio",
+                    WelcomeFeatureGlyph.Privacy)
             };
         }
 
@@ -543,7 +543,10 @@ namespace Raudo
         Pulse,
         Welcome,
         Install,
-        Tray
+        Tray,
+        Clipboard,
+        Displays,
+        Privacy
     }
 
     internal sealed class WelcomeFeatureDefinition
@@ -745,6 +748,77 @@ namespace Raudo
                         graphics.DrawLine(line, bounds.Left + 3, bounds.Top + 16, bounds.Right - 3, bounds.Top + 16);
                         graphics.FillEllipse(fill, bounds.Right - 9, bounds.Bottom - 8, 4, 4);
                         break;
+                    case WelcomeFeatureGlyph.Clipboard:
+                        graphics.DrawRectangle(
+                            line,
+                            bounds.Left + 5,
+                            bounds.Top + 4,
+                            bounds.Width - 10,
+                            bounds.Height - 7);
+                        graphics.DrawLine(
+                            line,
+                            bounds.Left + 9,
+                            bounds.Top + 10,
+                            bounds.Right - 9,
+                            bounds.Top + 10);
+                        graphics.DrawLine(
+                            line,
+                            bounds.Left + 9,
+                            bounds.Top + 15,
+                            bounds.Right - 11,
+                            bounds.Top + 15);
+                        graphics.DrawLine(
+                            line,
+                            centerX - 4,
+                            bounds.Top + 4,
+                            centerX + 4,
+                            bounds.Top + 4);
+                        break;
+                    case WelcomeFeatureGlyph.Displays:
+                        graphics.DrawRectangle(
+                            line,
+                            bounds.Left + 1,
+                            bounds.Top + 5,
+                            14,
+                            11);
+                        graphics.DrawRectangle(
+                            line,
+                            bounds.Left + 12,
+                            bounds.Top + 9,
+                            13,
+                            11);
+                        graphics.DrawLine(
+                            line,
+                            bounds.Left + 8,
+                            bounds.Top + 16,
+                            bounds.Left + 8,
+                            bounds.Bottom - 2);
+                        break;
+                    case WelcomeFeatureGlyph.Privacy:
+                        PointF[] shield =
+                        {
+                            new PointF(centerX, bounds.Top + 2),
+                            new PointF(bounds.Right - 4, bounds.Top + 6),
+                            new PointF(bounds.Right - 6, bounds.Bottom - 7),
+                            new PointF(centerX, bounds.Bottom - 2),
+                            new PointF(bounds.Left + 6, bounds.Bottom - 7),
+                            new PointF(bounds.Left + 4, bounds.Top + 6),
+                            new PointF(centerX, bounds.Top + 2)
+                        };
+                        graphics.DrawLines(line, shield);
+                        graphics.DrawLine(
+                            line,
+                            bounds.Left + 9,
+                            centerY,
+                            centerX - 1,
+                            bounds.Bottom - 8);
+                        graphics.DrawLine(
+                            line,
+                            centerX - 1,
+                            bounds.Bottom - 8,
+                            bounds.Right - 8,
+                            bounds.Top + 9);
+                        break;
                 }
             }
         }
@@ -888,9 +962,19 @@ namespace Raudo
                 }
             }
 
-            WelcomeFeatureGlyph glyph = showChanges
-                ? (WelcomeFeatureGlyph)((int)WelcomeFeatureGlyph.Welcome + feature)
-                : (WelcomeFeatureGlyph)feature;
+            WelcomeFeatureGlyph glyph;
+            if (showChanges)
+            {
+                glyph = feature == 0
+                    ? WelcomeFeatureGlyph.Clipboard
+                    : (feature == 1
+                        ? WelcomeFeatureGlyph.Displays
+                        : WelcomeFeatureGlyph.Privacy);
+            }
+            else
+            {
+                glyph = (WelcomeFeatureGlyph)feature;
+            }
             switch (glyph)
             {
                 case WelcomeFeatureGlyph.Search:
@@ -911,6 +995,103 @@ namespace Raudo
                 case WelcomeFeatureGlyph.Tray:
                     DrawTray(graphics, primary, active, text, muted, raised);
                     break;
+                case WelcomeFeatureGlyph.Clipboard:
+                    DrawClipboardHistory(graphics, primary, active, text, muted, raised);
+                    break;
+                case WelcomeFeatureGlyph.Displays:
+                    DrawDisplays(graphics, primary, active, text, muted, raised);
+                    break;
+                case WelcomeFeatureGlyph.Privacy:
+                    DrawPrivacy(graphics, primary, active, text, muted, raised);
+                    break;
+            }
+        }
+
+        private static void DrawClipboardHistory(
+            Graphics graphics,
+            Color primary,
+            Color active,
+            Color text,
+            Color muted,
+            Color raised)
+        {
+            DrawHeading(
+                graphics,
+                "Recupera textos cuando los necesitas",
+                "Escribe “portapapeles” en Salto",
+                text,
+                muted);
+            FillRound(graphics, new Rectangle(266, 40, 268, 120), 16, raised);
+            for (int index = 0; index < 3; index++)
+            {
+                int top = 56 + (index * 33);
+                WelcomeFeatureCard.DrawGlyph(
+                    graphics,
+                    WelcomeFeatureGlyph.Clipboard,
+                    new Rectangle(282, top, 22, 22),
+                    index == 0 ? active : primary);
+                DrawLine(
+                    graphics,
+                    new Point(318, top + 7),
+                    new Point(485 - (index * 18), top + 7),
+                    text,
+                    2.5F);
+                DrawLine(
+                    graphics,
+                    new Point(318, top + 16),
+                    new Point(455 - (index * 12), top + 16),
+                    muted,
+                    1.5F);
+            }
+        }
+
+        private static void DrawDisplays(
+            Graphics graphics,
+            Color primary,
+            Color active,
+            Color text,
+            Color muted,
+            Color raised)
+        {
+            DrawHeading(
+                graphics,
+                "Mini conserva su lugar entre pantallas",
+                "Escala, resolución y área de trabajo",
+                text,
+                muted);
+            FillRound(graphics, new Rectangle(264, 47, 122, 91), 14, raised);
+            FillRound(graphics, new Rectangle(397, 38, 137, 111), 16, raised);
+            DrawLine(graphics, new Point(281, 63), new Point(368, 63), muted, 2F);
+            DrawLine(graphics, new Point(414, 57), new Point(516, 57), muted, 2F);
+            FillRound(graphics, new Rectangle(372, 75, 14, 43), 7, active);
+            FillRound(graphics, new Rectangle(397, 86, 14, 50), 7, primary);
+            DrawLine(graphics, new Point(311, 138), new Point(340, 138), text, 2F);
+            DrawLine(graphics, new Point(446, 149), new Point(482, 149), text, 2F);
+        }
+
+        private static void DrawPrivacy(
+            Graphics graphics,
+            Color primary,
+            Color active,
+            Color text,
+            Color muted,
+            Color raised)
+        {
+            DrawHeading(
+                graphics,
+                "Sólo consulta cuando tú lo pides",
+                "Sin listener, archivos ni historial propio",
+                text,
+                muted);
+            FillRound(graphics, new Rectangle(306, 39, 172, 122), 28, raised);
+            WelcomeFeatureCard.DrawGlyph(
+                graphics,
+                WelcomeFeatureGlyph.Privacy,
+                new Rectangle(355, 57, 74, 74),
+                primary);
+            using (SolidBrush state = new SolidBrush(active))
+            {
+                graphics.FillEllipse(state, 422, 121, 12, 12);
             }
         }
 

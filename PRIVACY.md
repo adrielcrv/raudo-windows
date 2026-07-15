@@ -38,7 +38,9 @@ La copia anterior del ejecutable se conserva únicamente durante el reinicio y d
 
 Cuando Salto se abre, Raudo consulta los títulos de las ventanas visibles, el catálogo de aplicaciones registrado por Windows y un conjunto limitado de carpetas conocidas locales. Los nombres, identificadores y la consulta escrita se conservan únicamente en memoria durante la sesión necesaria para mostrar y filtrar resultados.
 
-Los cálculos y conversiones se procesan localmente. Raudo sólo escribe el resultado en el portapapeles después de que el usuario selecciona la acción correspondiente; no lee ni conserva el contenido anterior.
+Los cálculos y conversiones se procesan localmente. Raudo sólo escribe el resultado en el portapapeles después de que el usuario selecciona la acción correspondiente.
+
+Al escribir explícitamente `portapapeles` o `clipboard`, Raudo solicita a Windows hasta cinco entradas de texto de su historial. Puede añadirse un filtro después del comando. Cada texto retenido se limita a 64 KiB y existe en memoria únicamente mientras ese modo permanece abierto; se libera al cambiar de consulta, ocultar Salto o cerrar la ventana. Raudo no registra cambios del portapapeles, no crea un historial paralelo, no consulta imágenes o archivos y no escribe esas entradas en configuración, registros o red. Si el historial está desactivado o restringido por Windows, Raudo informa ese estado y no utiliza una alternativa propia.
 
 Raudo no lee el contenido de las ventanas, no recorre ni indexa archivos, no conserva el texto de búsqueda y no envía estos datos por la red. El catálogo de aplicaciones se prepara bajo demanda como máximo una vez por proceso; el indicador de preparación se muestra sólo durante esa operación y no registra su contenido. Las carpetas remotas y rutas de red no se consultan ni se muestran como accesos directos.
 
