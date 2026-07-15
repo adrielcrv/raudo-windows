@@ -4,6 +4,24 @@ using System.Windows.Forms;
 
 namespace Raudo
 {
+    internal static class DashboardLayoutMetrics
+    {
+        public static void SetBounds(
+            Control control,
+            DpiMetrics metrics,
+            int left,
+            int top,
+            int width,
+            int height)
+        {
+            control.SetBounds(
+                metrics.ScaleValue(left),
+                metrics.ScaleValue(top),
+                metrics.Scale(width),
+                metrics.Scale(height));
+        }
+    }
+
     internal sealed class PulseSurface : RoundedPanel
     {
         private readonly StatusPill statusIndicator;
@@ -100,6 +118,27 @@ namespace Raudo
 
         public event EventHandler DurationChanged;
         public event EventHandler ToggleRequested;
+
+        internal void ApplyDpiLayout(DpiMetrics metrics)
+        {
+            if (metrics == null)
+            {
+                throw new ArgumentNullException("metrics");
+            }
+
+            SuspendLayout();
+            Radius = metrics.Scale(16);
+            DashboardLayoutMetrics.SetBounds(statusIndicator, metrics, 20, 12, 112, 28);
+            DashboardLayoutMetrics.SetBounds(descriptionLabel, metrics, 20, 43, 424, 22);
+            DashboardLayoutMetrics.SetBounds(durationLabel, metrics, 20, 70, 120, 20);
+            DashboardLayoutMetrics.SetBounds(durationSelector, metrics, 20, 92, 248, 42);
+            DashboardLayoutMetrics.SetBounds(toggleButton, metrics, 280, 92, 172, 42);
+            DashboardLayoutMetrics.SetBounds(detailLabel, metrics, 20, 145, 432, 20);
+            toggleButton.Radius = metrics.Scale(10);
+            toggleButton.DrawingScale = metrics.ScaleFactor;
+            ResumeLayout(false);
+            Invalidate(true);
+        }
 
         public int SelectedMinutes
         {
@@ -259,6 +298,25 @@ namespace Raudo
 
         public event EventHandler ActionRequested;
 
+        internal void ApplyDpiLayout(DpiMetrics metrics)
+        {
+            if (metrics == null)
+            {
+                throw new ArgumentNullException("metrics");
+            }
+
+            SuspendLayout();
+            Radius = metrics.Scale(14);
+            DashboardLayoutMetrics.SetBounds(glyph, metrics, 16, 16, 44, 44);
+            DashboardLayoutMetrics.SetBounds(titleLabel, metrics, 76, 11, 246, 25);
+            DashboardLayoutMetrics.SetBounds(descriptionLabel, metrics, 76, 36, 270, 22);
+            DashboardLayoutMetrics.SetBounds(actionButton, metrics, 376, 22, 76, 32);
+            actionButton.Radius = metrics.Scale(9);
+            actionButton.DrawingScale = metrics.ScaleFactor;
+            ResumeLayout(false);
+            Invalidate(true);
+        }
+
         public void ApplyTheme(ThemePalette palette)
         {
             BackColor = palette.Surface;
@@ -378,6 +436,26 @@ namespace Raudo
         public event EventHandler MiniModeChanged;
         public event EventHandler StartupChanged;
 
+        internal void ApplyDpiLayout(DpiMetrics metrics)
+        {
+            if (metrics == null)
+            {
+                throw new ArgumentNullException("metrics");
+            }
+
+            SuspendLayout();
+            Radius = metrics.Scale(14);
+            DashboardLayoutMetrics.SetBounds(miniTitleLabel, metrics, 20, 8, 310, 24);
+            DashboardLayoutMetrics.SetBounds(miniDescriptionLabel, metrics, 20, 31, 350, 22);
+            DashboardLayoutMetrics.SetBounds(miniToggle, metrics, 406, 17, 46, 26);
+            DashboardLayoutMetrics.SetBounds(divider, metrics, 20, 61, 432, 1);
+            DashboardLayoutMetrics.SetBounds(startupTitleLabel, metrics, 20, 69, 310, 24);
+            DashboardLayoutMetrics.SetBounds(startupDescriptionLabel, metrics, 20, 92, 350, 22);
+            DashboardLayoutMetrics.SetBounds(startupToggle, metrics, 406, 78, 46, 26);
+            ResumeLayout(false);
+            Invalidate(true);
+        }
+
         public bool MiniModeEnabled
         {
             get { return miniToggle.Checked; }
@@ -487,6 +565,28 @@ namespace Raudo
 
         public event EventHandler CreateRequested;
         public event EventHandler GuideRequested;
+
+        internal void ApplyDpiLayout(DpiMetrics metrics)
+        {
+            if (metrics == null)
+            {
+                throw new ArgumentNullException("metrics");
+            }
+
+            SuspendLayout();
+            Radius = metrics.Scale(14);
+            DashboardLayoutMetrics.SetBounds(glyph, metrics, 16, 24, 44, 44);
+            DashboardLayoutMetrics.SetBounds(titleLabel, metrics, 76, 17, 204, 25);
+            DashboardLayoutMetrics.SetBounds(descriptionLabel, metrics, 76, 42, 212, 34);
+            DashboardLayoutMetrics.SetBounds(createButton, metrics, 290, 30, 76, 34);
+            DashboardLayoutMetrics.SetBounds(guideButton, metrics, 374, 30, 78, 34);
+            createButton.Radius = metrics.Scale(9);
+            createButton.DrawingScale = metrics.ScaleFactor;
+            guideButton.Radius = metrics.Scale(9);
+            guideButton.DrawingScale = metrics.ScaleFactor;
+            ResumeLayout(false);
+            Invalidate(true);
+        }
 
         public void ApplyTheme(ThemePalette palette)
         {

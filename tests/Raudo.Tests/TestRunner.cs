@@ -229,6 +229,16 @@ internal static class TestRunner
                 return 0;
             }
 
+            if (args.Length == 1 && args[0].StartsWith("--capture-ui-dark-200=", StringComparison.Ordinal))
+            {
+                CaptureUiScaled(
+                    args[0].Substring("--capture-ui-dark-200=".Length),
+                    true,
+                    2F);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
             if (args.Length == 1 && string.Equals(args[0], "--resource-probe", StringComparison.Ordinal))
             {
                 RunResourceProbe();
@@ -788,28 +798,48 @@ internal static class TestRunner
         using (MainForm form = new MainForm(service, new RaudoSettings(), icon))
         {
             form.ApplyTheme(ThemePalette.Create(dark));
-            form.Scale(new SizeF(scaleFactor, scaleFactor));
             form.Show();
             Application.DoEvents();
-            Thread.Sleep(150);
+            int dpi = (int)Math.Round(DpiMetrics.DefaultDpi * scaleFactor);
+            form.ApplyDpiForTesting(
+                dpi,
+                new Rectangle(
+                    0,
+                    0,
+                    (int)Math.Round(1440 * scaleFactor),
+                    (int)Math.Round(900 * scaleFactor)));
+            ScaleFontsForEvidence(form, scaleFactor);
             Application.DoEvents();
+            Console.WriteLine(
+                "Evidence window: Size={0} Client={1} DPI={2}",
+                form.Size,
+                form.ClientSize,
+                form.CurrentDpiForTesting);
             using (Bitmap full = new Bitmap(form.Width, form.Height))
             {
                 form.DrawToBitmap(full, new Rectangle(0, 0, form.Width, form.Height));
-                int border = Math.Max(0, (form.Width - form.ClientSize.Width) / 2);
-                int top = Math.Max(0, form.Height - form.ClientSize.Height - border);
-                Rectangle clientBounds = new Rectangle(
-                    border,
-                    top,
-                    form.ClientSize.Width,
-                    form.ClientSize.Height);
-                using (Bitmap client = full.Clone(clientBounds, PixelFormat.Format32bppArgb))
-                {
-                    client.Save(path, ImageFormat.Png);
-                }
+                full.Save(path, ImageFormat.Png);
             }
 
             form.AllowCloseAndClose();
+        }
+    }
+
+    private static void ScaleFontsForEvidence(Control control, float scaleFactor)
+    {
+        foreach (Control child in control.Controls)
+        {
+            ScaleFontsForEvidence(child, scaleFactor);
+        }
+
+        Font source = control.Font;
+        if (source != null && Math.Abs(scaleFactor - 1F) > 0.001F)
+        {
+            control.Font = new Font(
+                source.FontFamily,
+                source.Size * scaleFactor,
+                source.Style,
+                source.Unit);
         }
     }
 
@@ -2834,34 +2864,78 @@ internal static class TestRunner
             mainForm.ApplyTheme(highContrast);
             mainForm.Show();
             Application.DoEvents();
+            Size initialContentSize = MeasureVisibleContent(mainForm);
             Assert(
                 mainForm.AutoScroll
                     && mainForm.AutoScrollMargin == Size.Empty
-                    && !mainForm.VerticalScroll.Visible
-                    && !mainForm.HorizontalScroll.Visible,
-                "La ventana principal mostró desplazamiento artificial al 100%.");
+                    && mainForm.VerticalScroll.Visible
+                        == (initialContentSize.Height > mainForm.ClientSize.Height)
+                    && (!mainForm.HorizontalScroll.Visible
+                        || initialContentSize.Width > mainForm.ClientSize.Width),
+                "La ventana principal no ajustó el desplazamiento al área disponible al 100%.");
             AssertAccessibleControls(mainForm);
-            ScaleToTargetDpi(mainForm, 144);
-            Application.DoEvents();
-            AssertControlsWithinParent(mainForm);
 
-            int contentBottom = 0;
-            int contentRight = 0;
+            mainForm.ApplyDpiForTesting(
+                144,
+                new Rectangle(0, 0, 2160, 1350));
+            Application.DoEvents();
+            AssertChildSurfacesWithinBounds(mainForm);
+            Assert(
+                mainForm.CurrentDpiForTesting == 144,
+                "La ventana principal no conservó el DPI aplicado al 150%.");
+
+            mainForm.ApplyDpiForTesting(
+                192,
+                new Rectangle(0, 0, 2880, 1800));
+            Application.DoEvents();
+            AssertChildSurfacesWithinBounds(mainForm);
+            Assert(
+                mainForm.CurrentDpiForTesting == 192
+                    && mainForm.DesiredClientSizeForTesting == new Size(1040, 1448),
+                "La ventana principal no reconstruyó su lienzo lógico al 200%.");
+
+            PulseSurface pulseAt200 = null;
+            PreferencesSurface preferencesAt200 = null;
             foreach (Control child in mainForm.Controls)
             {
-                if (child.Visible)
+                if (child is PulseSurface)
                 {
-                    contentBottom = Math.Max(
-                        contentBottom,
-                        child.Bottom - mainForm.AutoScrollPosition.Y);
-                    contentRight = Math.Max(
-                        contentRight,
-                        child.Right - mainForm.AutoScrollPosition.X);
+                    pulseAt200 = (PulseSurface)child;
+                }
+                else if (child is PreferencesSurface)
+                {
+                    preferencesAt200 = (PreferencesSurface)child;
                 }
             }
 
-            bool verticalOverflow = contentBottom > mainForm.ClientSize.Height;
-            bool horizontalOverflow = contentRight > mainForm.ClientSize.Width;
+            Assert(
+                pulseAt200 != null
+                    && pulseAt200.Bounds == new Rectangle(48, 216, 944, 352)
+                    && preferencesAt200 != null
+                    && preferencesAt200.Bounds == new Rectangle(48, 1096, 944, 248),
+                "La composición principal perdió sus proporciones al 200%.");
+
+            Rectangle cappedBounds = MainWindowLayout.ResolveBounds(
+                new Point(1700, 900),
+                new Size(1046, 1490),
+                new Rectangle(0, 0, 1920, 1032));
+            Assert(
+                cappedBounds == new Rectangle(874, 0, 1046, 1032),
+                "La ventana principal no se limitó al área de trabajo disponible.");
+
+            mainForm.ApplyDpiForTesting(
+                96,
+                new Rectangle(0, 0, 1920, 1032));
+            Application.DoEvents();
+            Assert(
+                mainForm.DesiredClientSizeForTesting == new Size(520, 724)
+                    && pulseAt200.Bounds == new Rectangle(24, 108, 472, 176)
+                    && preferencesAt200.Bounds == new Rectangle(24, 548, 472, 124),
+                "La ventana principal acumuló escalado al volver de 200% a 100%.");
+
+            Size contentSize = MeasureVisibleContent(mainForm);
+            bool verticalOverflow = contentSize.Height > mainForm.ClientSize.Height;
+            bool horizontalOverflow = contentSize.Width > mainForm.ClientSize.Width;
             Assert(
                 mainForm.VerticalScroll.Visible == verticalOverflow
                     && (!mainForm.HorizontalScroll.Visible || horizontalOverflow),
@@ -2869,7 +2943,7 @@ internal static class TestRunner
 
             mainForm.ClientSize = new Size(
                 mainForm.ClientSize.Width,
-                Math.Max(1, contentBottom - 1));
+                Math.Max(1, contentSize.Height - 1));
             mainForm.PerformLayout();
             Application.DoEvents();
             Assert(
@@ -3970,6 +4044,34 @@ internal static class TestRunner
                     + parent.DeviceDpi);
             AssertControlsWithinParent(child);
         }
+    }
+
+    private static void AssertChildSurfacesWithinBounds(Control parent)
+    {
+        foreach (Control child in parent.Controls)
+        {
+            AssertControlsWithinParent(child);
+        }
+    }
+
+    private static Size MeasureVisibleContent(ScrollableControl parent)
+    {
+        int contentBottom = 0;
+        int contentRight = 0;
+        foreach (Control child in parent.Controls)
+        {
+            if (child.Visible)
+            {
+                contentBottom = Math.Max(
+                    contentBottom,
+                    child.Bottom - parent.AutoScrollPosition.Y);
+                contentRight = Math.Max(
+                    contentRight,
+                    child.Right - parent.AutoScrollPosition.X);
+            }
+        }
+
+        return new Size(contentRight, contentBottom);
     }
 
     private static void ScaleToTargetDpi(Control control, int targetDpi)

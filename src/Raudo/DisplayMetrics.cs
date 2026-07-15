@@ -42,9 +42,40 @@ namespace Raudo
             return Math.Max(1, (logicalPixels * Dpi + 48) / DefaultDpi);
         }
 
+        public int ScaleValue(int logicalPixels)
+        {
+            return (int)Math.Round(logicalPixels * ScaleFactor);
+        }
+
         public Size Scale(Size logicalSize)
         {
             return new Size(Scale(logicalSize.Width), Scale(logicalSize.Height));
+        }
+    }
+
+    internal static class MainWindowLayout
+    {
+        public static Rectangle ResolveBounds(
+            Point preferredLocation,
+            Size desiredSize,
+            Rectangle workingArea)
+        {
+            if (workingArea.Width <= 0 || workingArea.Height <= 0)
+            {
+                throw new ArgumentException(
+                    "The working area must have a positive size.",
+                    "workingArea");
+            }
+
+            int width = Math.Max(1, Math.Min(desiredSize.Width, workingArea.Width));
+            int height = Math.Max(1, Math.Min(desiredSize.Height, workingArea.Height));
+            int maximumLeft = workingArea.Right - width;
+            int maximumTop = workingArea.Bottom - height;
+            return new Rectangle(
+                Math.Max(workingArea.Left, Math.Min(maximumLeft, preferredLocation.X)),
+                Math.Max(workingArea.Top, Math.Min(maximumTop, preferredLocation.Y)),
+                width,
+                height);
         }
     }
 
