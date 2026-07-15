@@ -2864,12 +2864,15 @@ internal static class TestRunner
             mainForm.ApplyTheme(highContrast);
             mainForm.Show();
             Application.DoEvents();
+            Size initialContentSize = MeasureVisibleContent(mainForm);
             Assert(
                 mainForm.AutoScroll
                     && mainForm.AutoScrollMargin == Size.Empty
-                    && !mainForm.VerticalScroll.Visible
-                    && !mainForm.HorizontalScroll.Visible,
-                "La ventana principal mostró desplazamiento artificial al 100%.");
+                    && mainForm.VerticalScroll.Visible
+                        == (initialContentSize.Height > mainForm.ClientSize.Height)
+                    && (!mainForm.HorizontalScroll.Visible
+                        || initialContentSize.Width > mainForm.ClientSize.Width),
+                "La ventana principal no ajustó el desplazamiento al área disponible al 100%.");
             AssertAccessibleControls(mainForm);
 
             mainForm.ApplyDpiForTesting(
@@ -2930,23 +2933,9 @@ internal static class TestRunner
                     && preferencesAt200.Bounds == new Rectangle(24, 548, 472, 124),
                 "La ventana principal acumuló escalado al volver de 200% a 100%.");
 
-            int contentBottom = 0;
-            int contentRight = 0;
-            foreach (Control child in mainForm.Controls)
-            {
-                if (child.Visible)
-                {
-                    contentBottom = Math.Max(
-                        contentBottom,
-                        child.Bottom - mainForm.AutoScrollPosition.Y);
-                    contentRight = Math.Max(
-                        contentRight,
-                        child.Right - mainForm.AutoScrollPosition.X);
-                }
-            }
-
-            bool verticalOverflow = contentBottom > mainForm.ClientSize.Height;
-            bool horizontalOverflow = contentRight > mainForm.ClientSize.Width;
+            Size contentSize = MeasureVisibleContent(mainForm);
+            bool verticalOverflow = contentSize.Height > mainForm.ClientSize.Height;
+            bool horizontalOverflow = contentSize.Width > mainForm.ClientSize.Width;
             Assert(
                 mainForm.VerticalScroll.Visible == verticalOverflow
                     && (!mainForm.HorizontalScroll.Visible || horizontalOverflow),
@@ -2954,7 +2943,7 @@ internal static class TestRunner
 
             mainForm.ClientSize = new Size(
                 mainForm.ClientSize.Width,
-                Math.Max(1, contentBottom - 1));
+                Math.Max(1, contentSize.Height - 1));
             mainForm.PerformLayout();
             Application.DoEvents();
             Assert(
@@ -4055,6 +4044,26 @@ internal static class TestRunner
                     + parent.DeviceDpi);
             AssertControlsWithinParent(child);
         }
+    }
+
+    private static Size MeasureVisibleContent(ScrollableControl parent)
+    {
+        int contentBottom = 0;
+        int contentRight = 0;
+        foreach (Control child in parent.Controls)
+        {
+            if (child.Visible)
+            {
+                contentBottom = Math.Max(
+                    contentBottom,
+                    child.Bottom - parent.AutoScrollPosition.Y);
+                contentRight = Math.Max(
+                    contentRight,
+                    child.Right - parent.AutoScrollPosition.X);
+            }
+        }
+
+        return new Size(contentRight, contentBottom);
     }
 
     private static void ScaleToTargetDpi(Control control, int targetDpi)
