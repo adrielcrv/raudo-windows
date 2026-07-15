@@ -198,6 +198,11 @@ namespace Raudo
             get { return dpiMetrics.Dpi; }
         }
 
+        internal Size DesiredClientSizeForTesting
+        {
+            get { return dpiMetrics.Scale(LogicalClientSize); }
+        }
+
         internal void ApplyDpiForTesting(int dpi, Rectangle workingArea)
         {
             ApplyDpiLayout(

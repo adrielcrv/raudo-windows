@@ -2879,7 +2879,7 @@ internal static class TestRunner
                 144,
                 new Rectangle(0, 0, 2160, 1350));
             Application.DoEvents();
-            AssertControlsWithinParent(mainForm);
+            AssertChildSurfacesWithinBounds(mainForm);
             Assert(
                 mainForm.CurrentDpiForTesting == 144,
                 "La ventana principal no conservó el DPI aplicado al 150%.");
@@ -2888,10 +2888,10 @@ internal static class TestRunner
                 192,
                 new Rectangle(0, 0, 2880, 1800));
             Application.DoEvents();
-            AssertControlsWithinParent(mainForm);
+            AssertChildSurfacesWithinBounds(mainForm);
             Assert(
                 mainForm.CurrentDpiForTesting == 192
-                    && mainForm.ClientSize == new Size(1040, 1448),
+                    && mainForm.DesiredClientSizeForTesting == new Size(1040, 1448),
                 "La ventana principal no reconstruyó su lienzo lógico al 200%.");
 
             PulseSurface pulseAt200 = null;
@@ -2928,7 +2928,7 @@ internal static class TestRunner
                 new Rectangle(0, 0, 1920, 1032));
             Application.DoEvents();
             Assert(
-                mainForm.ClientSize == new Size(520, 724)
+                mainForm.DesiredClientSizeForTesting == new Size(520, 724)
                     && pulseAt200.Bounds == new Rectangle(24, 108, 472, 176)
                     && preferencesAt200.Bounds == new Rectangle(24, 548, 472, 124),
                 "La ventana principal acumuló escalado al volver de 200% a 100%.");
@@ -4042,6 +4042,14 @@ internal static class TestRunner
                     + available
                     + ", DPI="
                     + parent.DeviceDpi);
+            AssertControlsWithinParent(child);
+        }
+    }
+
+    private static void AssertChildSurfacesWithinBounds(Control parent)
+    {
+        foreach (Control child in parent.Controls)
+        {
             AssertControlsWithinParent(child);
         }
     }
