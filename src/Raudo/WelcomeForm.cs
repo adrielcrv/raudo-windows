@@ -69,7 +69,7 @@ namespace Raudo
 
             descriptionLabel = CreateLabel(
                 changes
-                    ? "La ventana mantiene una composición clara al cambiar de pantalla o usar escala de 200%."
+                    ? "La tipografía se mantiene clara al 200% y las órdenes de voz funcionan en español o inglés."
                     : "Acciones rápidas, voz local y controles discretos para trabajar en Windows.",
                 9.25F,
                 FontStyle.Regular,
@@ -393,16 +393,16 @@ namespace Raudo
             {
                 new WelcomeFeatureDefinition(
                     "Escala 200%",
-                    "Controles proporcionados",
+                    "Tipografía sin recortes",
                     WelcomeFeatureGlyph.Displays),
+                new WelcomeFeatureDefinition(
+                    "Voz bilingüe",
+                    "Español e inglés local",
+                    WelcomeFeatureGlyph.Voice),
                 new WelcomeFeatureDefinition(
                     "Cambio de pantalla",
                     "Composición inmediata",
-                    WelcomeFeatureGlyph.Welcome),
-                new WelcomeFeatureDefinition(
-                    "Área reducida",
-                    "Scroll sólo si hace falta",
-                    WelcomeFeatureGlyph.Tray)
+                    WelcomeFeatureGlyph.Welcome)
             };
         }
 
@@ -968,8 +968,8 @@ namespace Raudo
                 glyph = feature == 0
                     ? WelcomeFeatureGlyph.Displays
                     : (feature == 1
-                        ? WelcomeFeatureGlyph.Welcome
-                        : WelcomeFeatureGlyph.Tray);
+                        ? WelcomeFeatureGlyph.Voice
+                        : WelcomeFeatureGlyph.Welcome);
             }
             else
             {
@@ -1124,7 +1124,7 @@ namespace Raudo
             Color muted,
             Color raised)
         {
-            DrawHeading(graphics, "Habla sólo cuando tú lo pides", "Ctrl + Alt + V", text, muted);
+            DrawHeading(graphics, "Órdenes en español o inglés", "Idioma de voz de Windows · procesamiento local", text, muted);
             Rectangle pill = new Rectangle(270, 59, 232, 76);
             FillRound(graphics, pill, 38, raised);
             WelcomeFeatureCard.DrawGlyph(

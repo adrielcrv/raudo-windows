@@ -151,6 +151,20 @@ internal static class TestRunner
             }
 
             if (args.Length == 1
+                && args[0].StartsWith("--capture-voice-listening-english-dark-150=", StringComparison.Ordinal))
+            {
+                CaptureVoiceOverlay(
+                    args[0].Substring("--capture-voice-listening-english-dark-150=".Length),
+                    ThemePalette.Create(true),
+                    VoiceOverlayState.Listening,
+                    "Escuchando...",
+                    "Try “open Excel” or “what is 12 times 8”.",
+                    144);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
                 && string.Equals(args[0], "--voice-grammar-probe", StringComparison.Ordinal))
             {
                 RunVoiceGrammarProbe();
@@ -234,6 +248,16 @@ internal static class TestRunner
                 CaptureUiScaled(
                     args[0].Substring("--capture-ui-dark-200=".Length),
                     true,
+                    2F);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1 && args[0].StartsWith("--capture-ui-light-200=", StringComparison.Ordinal))
+            {
+                CaptureUiScaled(
+                    args[0].Substring("--capture-ui-light-200=".Length),
+                    false,
                     2F);
                 Console.WriteLine("PASS");
                 return 0;
@@ -1765,22 +1789,31 @@ internal static class TestRunner
         Assert(
             applications.Count > 0,
             catalog.LoadError ?? "Windows no devolvió aplicaciones instaladas.");
-        Stopwatch watch = Stopwatch.StartNew();
-        Windows.Media.SpeechRecognition.SpeechRecognitionResultStatus status =
-            VoiceRecognitionService
-                .CompileForTestingAsync(applications)
-                .GetAwaiter()
-                .GetResult();
-        watch.Stop();
-        Console.WriteLine(
-            "Voice grammar: {0} · {1} · {2} apps · {3:F0} ms",
-            availability.LanguageTag,
-            status,
-            Math.Min(applications.Count, VoiceGrammarBuilder.MaximumApplications),
-            watch.Elapsed.TotalMilliseconds);
-        Assert(
-            status == Windows.Media.SpeechRecognition.SpeechRecognitionResultStatus.Success,
-            "Windows no compiló la gramática local de Raudo: " + status);
+        IList<string> languageTags =
+            VoiceRecognitionService.GetSupportedCommandLanguageTagsForTesting();
+        Assert(languageTags.Count > 0, availability.Message);
+        foreach (string languageTag in languageTags)
+        {
+            Stopwatch watch = Stopwatch.StartNew();
+            Windows.Media.SpeechRecognition.SpeechRecognitionResultStatus status =
+                VoiceRecognitionService
+                    .CompileForTestingAsync(applications, languageTag)
+                    .GetAwaiter()
+                    .GetResult();
+            watch.Stop();
+            Console.WriteLine(
+                "Voice grammar: {0} · {1} · {2} apps · {3:F0} ms",
+                languageTag,
+                status,
+                Math.Min(applications.Count, VoiceGrammarBuilder.MaximumApplications),
+                watch.Elapsed.TotalMilliseconds);
+            Assert(
+                status == Windows.Media.SpeechRecognition.SpeechRecognitionResultStatus.Success,
+                "Windows no compiló la gramática local de Raudo: "
+                    + languageTag
+                    + " · "
+                    + status);
+        }
     }
 
     private static void RunVoiceIdleResourceProbe()
@@ -1830,7 +1863,48 @@ internal static class TestRunner
                 VoiceNumberWords.TryParse(VoiceNumberWords.ToSpanish(value), out parsed)
                     && parsed == value,
                 "El número hablado no conservó su valor: " + value);
+            Assert(
+                VoiceNumberWords.TryParse(VoiceNumberWords.ToEnglish(value), out parsed)
+                    && parsed == value,
+                "The spoken English number did not preserve its value: " + value);
         }
+
+        IList<string> supportedLanguages = new List<string>
+        {
+            "en-GB",
+            "es-ES",
+            "en-US",
+            "es-MX",
+            "fr-FR"
+        };
+        Assert(
+            VoiceLanguagePolicy.SelectLanguageTag(
+                supportedLanguages,
+                "en-GB",
+                "es-MX") == "en-GB",
+            "Voz no respetó el idioma de voz del sistema cuando era inglés.");
+        Assert(
+            VoiceLanguagePolicy.SelectLanguageTag(
+                supportedLanguages,
+                "fr-FR",
+                "es-ES") == "es-ES",
+            "Voz no utilizó el idioma de interfaz compatible.");
+        Assert(
+            VoiceLanguagePolicy.SelectLanguageTag(
+                supportedLanguages,
+                "fr-FR",
+                "fr-FR") == "es-MX",
+            "Voz no aplicó el orden de idiomas de respaldo documentado.");
+        Assert(
+            VoiceLanguagePolicy.SelectLanguageTag(
+                new List<string> { "en-AU" },
+                string.Empty,
+                "fr-FR") == "en-AU"
+                && VoiceLanguagePolicy.SelectLanguageTag(
+                    new List<string> { "fr-FR" },
+                    "fr-FR",
+                    "fr-FR").Length == 0,
+            "Voz aceptó un idioma no compatible o rechazó un inglés instalado.");
 
         IList<InstalledApplication> applications = new List<InstalledApplication>
         {
@@ -1848,6 +1922,14 @@ internal static class TestRunner
                 && calculation.Title == "57024"
                 && calculation.Detail == "132 * 432",
             "La operación hablada no produjo 57024.");
+        VoiceCommand englishCalculation = VoiceCommandParser.Parse(
+            "Raudo what is one hundred thirty two times four hundred thirty two",
+            applications);
+        Assert(
+            englishCalculation.Kind == VoiceCommandKind.Calculation
+                && englishCalculation.Title == "57024"
+                && englishCalculation.Detail == "132 * 432",
+            "The spoken English calculation did not produce 57024.");
 
         VoiceCommand app = VoiceCommandParser.Parse(
             "raudo abre microsoft excel",
@@ -1856,6 +1938,13 @@ internal static class TestRunner
             app.Kind == VoiceCommandKind.OpenApplication
                 && app.ApplicationIdentifier == "test.excel",
             "La orden de aplicación no conservó el identificador seguro del catálogo.");
+        VoiceCommand englishApp = VoiceCommandParser.Parse(
+            "raudo open microsoft excel",
+            applications);
+        Assert(
+            englishApp.Kind == VoiceCommandKind.OpenApplication
+                && englishApp.ApplicationIdentifier == "test.excel",
+            "The English application command did not preserve the catalog identity.");
         InstalledApplication notepad = applications[2];
         Assert(
             notepad.Aliases.Contains("Bloc de notas"),
@@ -1877,6 +1966,10 @@ internal static class TestRunner
                 == VoiceCommandKind.StartPulse,
             "Pulso no se clasificó como acción local.");
         Assert(
+            VoiceCommandParser.Parse("turn on pulse", applications).Kind
+                == VoiceCommandKind.StartPulse,
+            "The English Pulse command was not classified as a local action.");
+        Assert(
             VoiceCommandParser.Parse("escritorio siguiente", applications).Kind
                 == VoiceCommandKind.DesktopRight,
             "El escritorio siguiente no se clasificó correctamente.");
@@ -1892,6 +1985,24 @@ internal static class TestRunner
             VoiceCommandParser.Parse("muéstrame los escritorios", applications).Kind
                 == VoiceCommandKind.DesktopOverview,
             "La vista de escritorios no se clasificó correctamente.");
+        Assert(
+            VoiceCommandParser.Parse("next desktop", applications).Kind
+                == VoiceCommandKind.DesktopRight
+                && VoiceCommandParser.Parse("create a new desktop", applications).Kind
+                    == VoiceCommandKind.DesktopCreate
+                && VoiceCommandParser.Parse("show my desktops", applications).Kind
+                    == VoiceCommandKind.DesktopOverview,
+            "The English desktop commands were not classified correctly.");
+        Assert(
+            VoiceCommandParser.Parse("take a screenshot", applications).Kind
+                == VoiceCommandKind.ScreenCapture
+                && VoiceCommandParser.Parse("next track", applications).Kind
+                    == VoiceCommandKind.MediaNext
+                && VoiceCommandParser.Parse("pause", applications).Kind
+                    == VoiceCommandKind.MediaPlayPause
+                && VoiceCommandParser.Parse("volume down", applications).Kind
+                    == VoiceCommandKind.VolumeDown,
+            "The English capture or media commands were not classified correctly.");
         VoiceCommand conversion = VoiceCommandParser.Parse(
             "convierte diez kilómetros a millas",
             applications);
@@ -1899,10 +2010,19 @@ internal static class TestRunner
             conversion.Kind == VoiceCommandKind.Conversion
                 && conversion.Title.EndsWith(" mi", StringComparison.Ordinal),
             "La conversión hablada no reutilizó el motor local de Salto.");
+        VoiceCommand englishConversion = VoiceCommandParser.Parse(
+            "convert ten kilometers to miles",
+            applications);
+        Assert(
+            englishConversion.Kind == VoiceCommandKind.Conversion
+                && englishConversion.Title.EndsWith(" mi", StringComparison.Ordinal),
+            "The English conversion did not reuse Salto's local conversion engine.");
         Assert(
             VoiceCommandParser.Parse("borra documentos", applications).Kind
-                == VoiceCommandKind.Unknown,
-            "Una orden destructiva salió del estado Unknown.");
+                == VoiceCommandKind.Unknown
+                && VoiceCommandParser.Parse("delete documents", applications).Kind
+                    == VoiceCommandKind.Unknown,
+            "Una orden destructiva salió del estado Unknown en español o inglés.");
 
         IList<InstalledApplication> ambiguousApplications =
             new List<InstalledApplication>
@@ -1912,8 +2032,10 @@ internal static class TestRunner
             };
         Assert(
             VoiceCommandParser.Parse("abre microsoft", ambiguousApplications).Kind
-                == VoiceCommandKind.Unknown,
-            "Una aplicación ambigua se eligió sin confirmación.");
+                == VoiceCommandKind.Unknown
+                && VoiceCommandParser.Parse("open microsoft", ambiguousApplications).Kind
+                    == VoiceCommandKind.Unknown,
+            "Una aplicación ambigua se eligió sin confirmación en español o inglés.");
 
         IList<InstalledApplication> ambiguousAliases = new List<InstalledApplication>
         {
@@ -1933,6 +2055,7 @@ internal static class TestRunner
 
         string grammar = VoiceGrammarBuilder.BuildSrgs("es-MX");
         string spanishSpainGrammar = VoiceGrammarBuilder.BuildSrgs("es-ES");
+        string englishGrammar = VoiceGrammarBuilder.BuildSrgs("en-US");
         Assert(
             grammar.IndexOf("xml:lang=\"es-MX\"", StringComparison.Ordinal) >= 0
                 && spanishSpainGrammar.IndexOf(
@@ -1943,10 +2066,21 @@ internal static class TestRunner
                     StringComparison.Ordinal) < 0,
             "La gramática no conserva el idioma del reconocedor seleccionado.");
         Assert(
+            englishGrammar.IndexOf("xml:lang=\"en-US\"", StringComparison.Ordinal) >= 0
+                && englishGrammar.IndexOf("what is", StringComparison.Ordinal) >= 0
+                && englishGrammar.IndexOf("four hundred thirty two", StringComparison.Ordinal) >= 0
+                && englishGrammar.IndexOf("cuatrocientos", StringComparison.Ordinal) < 0,
+            "The English grammar mixed languages or omitted the supported command range.");
+        Assert(
             grammar.IndexOf("SpeechRecognitionTopicConstraint", StringComparison.OrdinalIgnoreCase) < 0
                 && grammar.IndexOf("webSearch", StringComparison.OrdinalIgnoreCase) < 0
                 && grammar.IndexOf("dictation", StringComparison.OrdinalIgnoreCase) < 0,
             "La gramática local contiene una referencia a reconocimiento remoto.");
+        Assert(
+            englishGrammar.IndexOf("SpeechRecognitionTopicConstraint", StringComparison.OrdinalIgnoreCase) < 0
+                && englishGrammar.IndexOf("webSearch", StringComparison.OrdinalIgnoreCase) < 0
+                && englishGrammar.IndexOf("SpeechRecognitionScenario", StringComparison.OrdinalIgnoreCase) < 0,
+            "The English grammar contains a remote recognition reference.");
         Assert(
             grammar.IndexOf("cuatrocientos treinta y dos", StringComparison.Ordinal) >= 0,
             "La gramática no incluye operandos hablados hasta 999.");
@@ -1968,6 +2102,14 @@ internal static class TestRunner
             localizedPhrases.Contains("abre bloc de notas")
                 && localizedPhrases.Contains("raudo abre bloc de notas"),
             "La gramática de voz no incluyó el alias localizado de Notepad.");
+        IList<string> englishApplicationPhrases = VoiceGrammarBuilder.BuildApplicationPhrases(
+            applications,
+            "en-US");
+        Assert(
+            englishApplicationPhrases.Contains("open microsoft excel")
+                && englishApplicationPhrases.Contains("raudo open microsoft excel")
+                && !englishApplicationPhrases.Contains("abre microsoft excel"),
+            "The English voice grammar did not use the English application prefix.");
 
         Assert(
             VoiceSessionPolicy.ShouldRetry(
@@ -2864,9 +3006,11 @@ internal static class TestRunner
             mainForm.ApplyTheme(highContrast);
             mainForm.Show();
             Application.DoEvents();
+            IList<float> logicalFontSizes = CaptureFontSizes(mainForm);
             Size initialContentSize = MeasureVisibleContent(mainForm);
             Assert(
-                mainForm.AutoScroll
+                mainForm.AutoScaleMode == AutoScaleMode.None
+                    && mainForm.AutoScroll
                     && mainForm.AutoScrollMargin == Size.Empty
                     && mainForm.VerticalScroll.Visible
                         == (initialContentSize.Height > mainForm.ClientSize.Height)
@@ -2893,6 +3037,7 @@ internal static class TestRunner
                 mainForm.CurrentDpiForTesting == 192
                     && mainForm.DesiredClientSizeForTesting == new Size(1040, 1448),
                 "La ventana principal no reconstruyó su lienzo lógico al 200%.");
+            AssertFontSizes(mainForm, logicalFontSizes);
 
             PulseSurface pulseAt200 = null;
             PreferencesSurface preferencesAt200 = null;
@@ -2932,6 +3077,7 @@ internal static class TestRunner
                     && pulseAt200.Bounds == new Rectangle(24, 108, 472, 176)
                     && preferencesAt200.Bounds == new Rectangle(24, 548, 472, 124),
                 "La ventana principal acumuló escalado al volver de 200% a 100%.");
+            AssertFontSizes(mainForm, logicalFontSizes);
 
             Size contentSize = MeasureVisibleContent(mainForm);
             bool verticalOverflow = contentSize.Height > mainForm.ClientSize.Height;
@@ -4021,6 +4167,36 @@ internal static class TestRunner
             }
 
             AssertAccessibleControls(child);
+        }
+    }
+
+    private static IList<float> CaptureFontSizes(Control parent)
+    {
+        List<float> sizes = new List<float>();
+        CaptureFontSizes(parent, sizes);
+        return sizes;
+    }
+
+    private static void CaptureFontSizes(Control parent, IList<float> sizes)
+    {
+        sizes.Add(parent.Font.Size);
+        foreach (Control child in parent.Controls)
+        {
+            CaptureFontSizes(child, sizes);
+        }
+    }
+
+    private static void AssertFontSizes(Control parent, IList<float> expected)
+    {
+        IList<float> actual = CaptureFontSizes(parent);
+        Assert(
+            actual.Count == expected.Count,
+            "La composición DPI cambió la cantidad de fuentes de la ventana principal.");
+        for (int index = 0; index < actual.Count; index++)
+        {
+            Assert(
+                Math.Abs(actual[index] - expected[index]) < 0.01F,
+                "La composición DPI alteró el tamaño tipográfico en puntos.");
         }
     }
 

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.WindowsRuntime;
@@ -68,6 +69,134 @@ namespace Raudo
         public string Message { get; private set; }
     }
 
+    internal static class VoiceLanguagePolicy
+    {
+        public static string SelectLanguageTag(
+            IList<string> supportedLanguageTags,
+            string systemLanguageTag,
+            string uiLanguageTag)
+        {
+            if (supportedLanguageTags == null)
+            {
+                return string.Empty;
+            }
+
+            string selected = FindExact(supportedLanguageTags, systemLanguageTag);
+            if (IsCommandLanguage(selected))
+            {
+                return selected;
+            }
+
+            selected = FindExact(supportedLanguageTags, uiLanguageTag);
+            if (IsCommandLanguage(selected))
+            {
+                return selected;
+            }
+
+            selected = FindFamily(supportedLanguageTags, uiLanguageTag);
+            if (IsCommandLanguage(selected))
+            {
+                return selected;
+            }
+
+            string[] preferred = { "es-MX", "en-US" };
+            foreach (string languageTag in preferred)
+            {
+                selected = FindExact(supportedLanguageTags, languageTag);
+                if (selected.Length > 0)
+                {
+                    return selected;
+                }
+            }
+
+            selected = FindFamily(supportedLanguageTags, "es");
+            return selected.Length > 0
+                ? selected
+                : FindFamily(supportedLanguageTags, "en");
+        }
+
+        public static bool IsEnglish(string languageTag)
+        {
+            return HasLanguagePrefix(languageTag, "en");
+        }
+
+        public static string DisplayName(string languageTag)
+        {
+            if (string.IsNullOrWhiteSpace(languageTag))
+            {
+                return "Idioma de voz";
+            }
+
+            return (IsEnglish(languageTag) ? "English" : "Español")
+                + " ("
+                + languageTag
+                + ")";
+        }
+
+        private static bool IsCommandLanguage(string languageTag)
+        {
+            return HasLanguagePrefix(languageTag, "es")
+                || HasLanguagePrefix(languageTag, "en");
+        }
+
+        private static string FindExact(IList<string> supported, string requested)
+        {
+            if (string.IsNullOrWhiteSpace(requested))
+            {
+                return string.Empty;
+            }
+
+            foreach (string languageTag in supported)
+            {
+                if (string.Equals(
+                    languageTag,
+                    requested,
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    return languageTag;
+                }
+            }
+
+            return string.Empty;
+        }
+
+        private static string FindFamily(IList<string> supported, string requested)
+        {
+            if (string.IsNullOrWhiteSpace(requested))
+            {
+                return string.Empty;
+            }
+
+            string prefix = requested.Length >= 2
+                ? requested.Substring(0, 2)
+                : requested;
+            if (!string.Equals(prefix, "es", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(prefix, "en", StringComparison.OrdinalIgnoreCase))
+            {
+                return string.Empty;
+            }
+
+            foreach (string languageTag in supported)
+            {
+                if (HasLanguagePrefix(languageTag, prefix))
+                {
+                    return languageTag;
+                }
+            }
+
+            return string.Empty;
+        }
+
+        private static bool HasLanguagePrefix(string languageTag, string prefix)
+        {
+            return !string.IsNullOrWhiteSpace(languageTag)
+                && (string.Equals(languageTag, prefix, StringComparison.OrdinalIgnoreCase)
+                    || languageTag.StartsWith(
+                        prefix + "-",
+                        StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
     internal sealed class VoiceRecognitionService : IDisposable
     {
         private readonly object sync = new object();
@@ -93,19 +222,20 @@ namespace Raudo
         {
             try
             {
-                Language language = FindSpanishLanguage();
+                Language language = FindCommandLanguage();
                 if (language == null)
                 {
                     return new VoiceAvailability(
                         false,
                         string.Empty,
-                        "Instala Voz para Español (México) en Configuración de Windows.");
+                        "Instala voz en español o inglés desde Configuración de Windows.");
                 }
 
                 return new VoiceAvailability(
                     true,
                     language.LanguageTag,
-                    "Voz local de Windows lista");
+                    "Voz local de Windows lista · "
+                        + VoiceLanguagePolicy.DisplayName(language.LanguageTag));
             }
             catch (Exception)
             {
@@ -161,13 +291,13 @@ namespace Raudo
             try
             {
                 RaisePhase(VoiceRecognitionPhase.Preparing);
-                Language language = FindSpanishLanguage();
+                Language language = FindCommandLanguage();
                 if (language == null)
                 {
                     return new VoiceRecognitionOutcome(
                         VoiceRecognitionOutcomeKind.Unavailable,
                         string.Empty,
-                        "Español (México) no está disponible como idioma de voz en Windows.");
+                        "No hay un idioma de voz en español o inglés disponible en Windows.");
                 }
 
                 recognizer = new SpeechRecognizer(language);
@@ -190,7 +320,9 @@ namespace Raudo
                         "raudo.local.commands"));
 
                 IList<string> applicationPhrases =
-                    VoiceGrammarBuilder.BuildApplicationPhrases(applications);
+                    VoiceGrammarBuilder.BuildApplicationPhrases(
+                        applications,
+                        language.LanguageTag);
                 if (applicationPhrases.Count > 0)
                 {
                     recognizer.Constraints.Add(
@@ -347,7 +479,44 @@ namespace Raudo
         internal static async Task<SpeechRecognitionResultStatus> CompileForTestingAsync(
             IList<InstalledApplication> applications)
         {
-            Language language = FindSpanishLanguage();
+            Language language = FindCommandLanguage();
+            return await CompileForTestingAsync(applications, language);
+        }
+
+        internal static async Task<SpeechRecognitionResultStatus> CompileForTestingAsync(
+            IList<InstalledApplication> applications,
+            string languageTag)
+        {
+            return await CompileForTestingAsync(
+                applications,
+                FindCommandLanguage(languageTag));
+        }
+
+        internal static IList<string> GetSupportedCommandLanguageTagsForTesting()
+        {
+            List<string> languageTags = new List<string>();
+            foreach (Language language in SpeechRecognizer.SupportedGrammarLanguages)
+            {
+                if (VoiceLanguagePolicy.IsEnglish(language.LanguageTag)
+                    || language.LanguageTag.StartsWith(
+                        "es-",
+                        StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(
+                        language.LanguageTag,
+                        "es",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    languageTags.Add(language.LanguageTag);
+                }
+            }
+
+            return languageTags;
+        }
+
+        private static async Task<SpeechRecognitionResultStatus> CompileForTestingAsync(
+            IList<InstalledApplication> applications,
+            Language language)
+        {
             if (language == null)
             {
                 return SpeechRecognitionResultStatus.TopicLanguageNotSupported;
@@ -360,7 +529,9 @@ namespace Raudo
                     .AsTask();
                 recognizer.Constraints.Add(
                     new SpeechRecognitionGrammarFileConstraint(grammarFile));
-                IList<string> phrases = VoiceGrammarBuilder.BuildApplicationPhrases(applications);
+                IList<string> phrases = VoiceGrammarBuilder.BuildApplicationPhrases(
+                    applications,
+                    language.LanguageTag);
                 if (phrases.Count > 0)
                 {
                     recognizer.Constraints.Add(new SpeechRecognitionListConstraint(phrases));
@@ -382,27 +553,54 @@ namespace Raudo
             }
         }
 
-        private static Language FindSpanishLanguage()
+        private static Language FindCommandLanguage()
         {
-            Language fallback = null;
+            List<Language> languages = new List<Language>();
+            List<string> languageTags = new List<string>();
             foreach (Language language in SpeechRecognizer.SupportedGrammarLanguages)
+            {
+                languages.Add(language);
+                languageTags.Add(language.LanguageTag);
+            }
+
+            Language systemLanguage = SpeechRecognizer.SystemSpeechLanguage;
+            string selectedTag = VoiceLanguagePolicy.SelectLanguageTag(
+                languageTags,
+                systemLanguage == null ? string.Empty : systemLanguage.LanguageTag,
+                CultureInfo.CurrentUICulture.Name);
+            foreach (Language language in languages)
             {
                 if (string.Equals(
                     language.LanguageTag,
-                    "es-MX",
+                    selectedTag,
                     StringComparison.OrdinalIgnoreCase))
                 {
                     return language;
                 }
+            }
 
-                if (fallback == null
-                    && language.LanguageTag.StartsWith("es-", StringComparison.OrdinalIgnoreCase))
+            return null;
+        }
+
+        private static Language FindCommandLanguage(string languageTag)
+        {
+            if (string.IsNullOrWhiteSpace(languageTag))
+            {
+                return null;
+            }
+
+            foreach (Language language in SpeechRecognizer.SupportedGrammarLanguages)
+            {
+                if (string.Equals(
+                    language.LanguageTag,
+                    languageTag,
+                    StringComparison.OrdinalIgnoreCase))
                 {
-                    fallback = language;
+                    return language;
                 }
             }
 
-            return fallback;
+            return null;
         }
 
         private static string EnsureGrammarFile(string languageTag)

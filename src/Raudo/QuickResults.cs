@@ -169,18 +169,18 @@ namespace Raudo
             Dictionary<string, UnitDefinition> units =
                 new Dictionary<string, UnitDefinition>(StringComparer.Ordinal);
 
-            AddUnit(units, "length", "mm", 0.001M, "mm", "milimetro", "milimetros");
-            AddUnit(units, "length", "cm", 0.01M, "cm", "centimetro", "centimetros");
-            AddUnit(units, "length", "m", 1M, "m", "metro", "metros");
-            AddUnit(units, "length", "km", 1000M, "km", "kilometro", "kilometros");
+            AddUnit(units, "length", "mm", 0.001M, "mm", "millimeter", "millimeters", "milimetro", "milimetros");
+            AddUnit(units, "length", "cm", 0.01M, "cm", "centimeter", "centimeters", "centimetro", "centimetros");
+            AddUnit(units, "length", "m", 1M, "m", "meter", "meters", "metro", "metros");
+            AddUnit(units, "length", "km", 1000M, "km", "kilometer", "kilometers", "kilometro", "kilometros");
             AddUnit(units, "length", "in", 0.0254M, "in", "inch", "inches", "pulgada", "pulgadas");
             AddUnit(units, "length", "ft", 0.3048M, "ft", "foot", "feet", "pie", "pies");
             AddUnit(units, "length", "yd", 0.9144M, "yd", "yard", "yards", "yarda", "yardas");
             AddUnit(units, "length", "mi", 1609.344M, "mi", "mile", "miles", "milla", "millas");
 
-            AddUnit(units, "mass", "mg", 0.001M, "mg", "miligramo", "miligramos");
-            AddUnit(units, "mass", "g", 1M, "g", "gramo", "gramos");
-            AddUnit(units, "mass", "kg", 1000M, "kg", "kilogramo", "kilogramos", "kilo", "kilos");
+            AddUnit(units, "mass", "mg", 0.001M, "mg", "milligram", "milligrams", "miligramo", "miligramos");
+            AddUnit(units, "mass", "g", 1M, "g", "gram", "grams", "gramo", "gramos");
+            AddUnit(units, "mass", "kg", 1000M, "kg", "kilogram", "kilograms", "kilogramo", "kilogramos", "kilo", "kilos");
             AddUnit(units, "mass", "oz", 28.349523125M, "oz", "ounce", "ounces", "onza", "onzas");
             AddUnit(units, "mass", "lb", 453.59237M, "lb", "lbs", "pound", "pounds", "libra", "libras");
 
@@ -188,7 +188,7 @@ namespace Raudo
             AddTemperatureUnit(units, "°F", TemperatureScale.Fahrenheit, "f", "°f", "fahrenheit");
             AddTemperatureUnit(units, "K", TemperatureScale.Kelvin, "k", "kelvin");
 
-            AddUnit(units, "time", "ms", 0.001M, "ms", "milisegundo", "milisegundos");
+            AddUnit(units, "time", "ms", 0.001M, "ms", "millisecond", "milliseconds", "milisegundo", "milisegundos");
             AddUnit(units, "time", "s", 1M, "s", "seg", "second", "seconds", "segundo", "segundos");
             AddUnit(units, "time", "min", 60M, "min", "minute", "minutes", "minuto", "minutos");
             AddUnit(units, "time", "h", 3600M, "h", "hr", "hrs", "hour", "hours", "hora", "horas");

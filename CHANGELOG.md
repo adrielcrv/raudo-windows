@@ -4,6 +4,13 @@ Este proyecto utiliza versionado semántico.
 
 ## [Sin publicar]
 
+## [1.10.3] - 2026-07-15
+
+- Corrección del doble escalado tipográfico que recortaba textos y amontonaba la ventana principal en pantallas reales configuradas al 200%.
+- Selección automática entre los idiomas de voz en español e inglés instalados y configurados en Windows.
+- Gramática local en inglés para abrir aplicaciones, controlar Pulso, escritorios y multimedia, recortar pantalla, calcular y convertir unidades.
+- Compilación verificada de las gramáticas `en-US` y `es-MX` con el motor local de Windows, sin dictado abierto ni servicios remotos.
+
 ## [1.10.2] - 2026-07-15
 
 - La ventana principal conserva su composición y proporciones en pantallas con escala de hasta 200%, incluida una resolución de 2880 x 1800.

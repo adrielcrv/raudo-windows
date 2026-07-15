@@ -146,7 +146,8 @@ namespace Raudo
 
             string applicationName;
             if (TryRemovePrefix(normalized, "abre ", out applicationName)
-                || TryRemovePrefix(normalized, "abrir ", out applicationName))
+                || TryRemovePrefix(normalized, "abrir ", out applicationName)
+                || TryRemovePrefix(normalized, "open ", out applicationName))
             {
                 InstalledApplication match = FindApplication(applicationName, applications);
                 return match == null
@@ -164,6 +165,7 @@ namespace Raudo
             {
                 case "abre youtube":
                 case "abrir youtube":
+                case "open youtube":
                     return VoiceCommand.Create(
                         VoiceCommandKind.OpenYouTube,
                         "Abriendo YouTube",
@@ -172,18 +174,26 @@ namespace Raudo
                 case "muestra el clima":
                 case "abre el clima":
                 case "como esta el clima":
+                case "show me the weather":
+                case "show the weather":
+                case "open weather":
+                case "what is the weather":
                     return VoiceCommand.Create(
                         VoiceCommandKind.OpenWeather,
                         "Mostrando el clima",
                         "Búsqueda en el navegador predeterminado");
                 case "abre salto":
                 case "muestra salto":
+                case "open salto":
+                case "show salto":
                     return VoiceCommand.Create(
                         VoiceCommandKind.OpenSalto,
                         "Abriendo Salto",
                         "Comandos y búsqueda local");
                 case "abre raudo":
                 case "muestra raudo":
+                case "open raudo":
+                case "show raudo":
                     return VoiceCommand.Create(
                         VoiceCommandKind.OpenRaudo,
                         "Abriendo Raudo",
@@ -191,6 +201,9 @@ namespace Raudo
                 case "inicia pulso":
                 case "activa pulso":
                 case "enciende pulso":
+                case "start pulse":
+                case "activate pulse":
+                case "turn on pulse":
                     return VoiceCommand.Create(
                         VoiceCommandKind.StartPulse,
                         "Pulso encendido",
@@ -198,6 +211,9 @@ namespace Raudo
                 case "deten pulso":
                 case "detiene pulso":
                 case "apaga pulso":
+                case "stop pulse":
+                case "deactivate pulse":
+                case "turn off pulse":
                     return VoiceCommand.Create(
                         VoiceCommandKind.StopPulse,
                         "Pulso apagado",
@@ -206,6 +222,9 @@ namespace Raudo
                 case "escritorio de la izquierda":
                 case "escritorio anterior":
                 case "cambia al escritorio izquierdo":
+                case "left desktop":
+                case "previous desktop":
+                case "switch to the left desktop":
                     return VoiceCommand.Create(
                         VoiceCommandKind.DesktopLeft,
                         "Escritorio anterior",
@@ -214,11 +233,16 @@ namespace Raudo
                 case "escritorio de la derecha":
                 case "escritorio siguiente":
                 case "cambia al escritorio derecho":
+                case "right desktop":
+                case "next desktop":
+                case "switch to the right desktop":
                     return VoiceCommand.Create(
                         VoiceCommandKind.DesktopRight,
                         "Escritorio siguiente",
                         "Cambiando a la derecha");
                 case "cambia de escritorio":
+                case "switch desktop":
+                case "change desktop":
                     return VoiceCommand.Create(
                         VoiceCommandKind.DesktopAdjacent,
                         "Cambiando de escritorio",
@@ -226,6 +250,9 @@ namespace Raudo
                 case "crea un escritorio":
                 case "crea un nuevo escritorio":
                 case "nuevo escritorio":
+                case "create a desktop":
+                case "create a new desktop":
+                case "new desktop":
                     return VoiceCommand.Create(
                         VoiceCommandKind.DesktopCreate,
                         "Escritorio creado",
@@ -233,6 +260,9 @@ namespace Raudo
                 case "muestrame los escritorios":
                 case "muestra los escritorios":
                 case "vista de escritorios":
+                case "show desktops":
+                case "show my desktops":
+                case "open task view":
                     return VoiceCommand.Create(
                         VoiceCommandKind.DesktopOverview,
                         "Vista de escritorios",
@@ -240,6 +270,9 @@ namespace Raudo
                 case "recorta pantalla":
                 case "toma una captura":
                 case "captura pantalla":
+                case "crop screen":
+                case "take a screenshot":
+                case "capture screen":
                     return VoiceCommand.Create(
                         VoiceCommandKind.ScreenCapture,
                         "Recortar pantalla",
@@ -247,40 +280,55 @@ namespace Raudo
                 case "reproduce":
                 case "pausa":
                 case "reproduce o pausa":
+                case "play":
+                case "pause":
+                case "play or pause":
                     return VoiceCommand.Create(
                         VoiceCommandKind.MediaPlayPause,
                         "Control multimedia",
                         "Reproducir o pausar");
                 case "cancion anterior":
                 case "pista anterior":
+                case "previous song":
+                case "previous track":
                     return VoiceCommand.Create(
                         VoiceCommandKind.MediaPrevious,
                         "Control multimedia",
                         "Pista anterior");
                 case "siguiente cancion":
                 case "siguiente pista":
+                case "next song":
+                case "next track":
                     return VoiceCommand.Create(
                         VoiceCommandKind.MediaNext,
                         "Control multimedia",
                         "Pista siguiente");
                 case "silencia":
                 case "silencia el volumen":
+                case "mute":
+                case "mute volume":
                     return VoiceCommand.Create(
                         VoiceCommandKind.VolumeMute,
                         "Control multimedia",
                         "Silenciar o restaurar volumen");
                 case "baja el volumen":
+                case "lower volume":
+                case "volume down":
                     return VoiceCommand.Create(
                         VoiceCommandKind.VolumeDown,
                         "Control multimedia",
                         "Bajar volumen");
                 case "sube el volumen":
+                case "raise volume":
+                case "volume up":
                     return VoiceCommand.Create(
                         VoiceCommandKind.VolumeUp,
                         "Control multimedia",
                         "Subir volumen");
                 case "transcribe":
                 case "inicia dictado":
+                case "transcribe audio":
+                case "start dictation":
                     return VoiceCommand.Create(
                         VoiceCommandKind.DictationUnavailable,
                         "Dictado no disponible",
@@ -294,7 +342,9 @@ namespace Raudo
         {
             string expression;
             if (!TryRemovePrefix(command, "cuanto es ", out expression)
-                && !TryRemovePrefix(command, "calcula ", out expression))
+                && !TryRemovePrefix(command, "calcula ", out expression)
+                && !TryRemovePrefix(command, "what is ", out expression)
+                && !TryRemovePrefix(command, "calculate ", out expression))
             {
                 return VoiceCommand.Unknown(string.Empty);
             }
@@ -303,11 +353,16 @@ namespace Raudo
             {
                 " dividido entre ",
                 " dividido por ",
+                " divided by ",
+                " multiplied by ",
                 " menos ",
                 " mas ",
+                " minus ",
+                " plus ",
+                " times ",
                 " por "
             };
-            string[] symbols = { "/", "/", "-", "+", "*" };
+            string[] symbols = { "/", "/", "/", "*", "-", "+", "-", "+", "*", "*" };
             int selected = -1;
             int position = -1;
             for (int index = 0; index < spokenOperators.Length; index++)
@@ -373,19 +428,21 @@ namespace Raudo
         private static VoiceCommand ParseConversion(string command)
         {
             string expression;
-            if (!TryRemovePrefix(command, "convierte ", out expression))
+            bool english = TryRemovePrefix(command, "convert ", out expression);
+            if (!english && !TryRemovePrefix(command, "convierte ", out expression))
             {
                 return VoiceCommand.Unknown(string.Empty);
             }
 
-            int separator = expression.LastIndexOf(" a ", StringComparison.Ordinal);
+            string separatorText = english ? " to " : " a ";
+            int separator = expression.LastIndexOf(separatorText, StringComparison.Ordinal);
             if (separator <= 0)
             {
                 return VoiceCommand.Unknown("La conversión debe indicar una unidad de destino.");
             }
 
             string left = expression.Substring(0, separator).Trim();
-            string targetUnit = expression.Substring(separator + 3).Trim();
+            string targetUnit = expression.Substring(separator + separatorText.Length).Trim();
             int unitSeparator = left.LastIndexOf(' ');
             if (unitSeparator <= 0 || targetUnit.Length == 0)
             {
@@ -510,7 +567,7 @@ namespace Raudo
         public const int MaximumApplications = 384;
         public const int MaximumApplicationPhrases = MaximumApplications * 4;
 
-        private static readonly string[] FixedCommands =
+        private static readonly string[] SpanishFixedCommands =
         {
             "abre youtube",
             "abrir youtube",
@@ -561,13 +618,73 @@ namespace Raudo
             "inicia dictado"
         };
 
-        private static readonly string[] ConversionUnits =
+        private static readonly string[] EnglishFixedCommands =
+        {
+            "open youtube",
+            "show me the weather",
+            "show the weather",
+            "open weather",
+            "what is the weather",
+            "open salto",
+            "show salto",
+            "open raudo",
+            "show raudo",
+            "start pulse",
+            "activate pulse",
+            "turn on pulse",
+            "stop pulse",
+            "deactivate pulse",
+            "turn off pulse",
+            "left desktop",
+            "previous desktop",
+            "switch to the left desktop",
+            "right desktop",
+            "next desktop",
+            "switch to the right desktop",
+            "switch desktop",
+            "change desktop",
+            "create a desktop",
+            "create a new desktop",
+            "new desktop",
+            "show desktops",
+            "show my desktops",
+            "open task view",
+            "crop screen",
+            "take a screenshot",
+            "capture screen",
+            "play",
+            "pause",
+            "play or pause",
+            "previous song",
+            "previous track",
+            "next song",
+            "next track",
+            "mute",
+            "mute volume",
+            "lower volume",
+            "volume down",
+            "raise volume",
+            "volume up",
+            "transcribe",
+            "transcribe audio",
+            "start dictation"
+        };
+
+        private static readonly string[] SpanishConversionUnits =
         {
             "milímetros", "centímetros", "metros", "kilómetros", "pulgadas", "pies",
             "yardas", "millas", "miligramos", "gramos", "kilogramos", "kilos", "onzas",
             "libras", "celsius", "fahrenheit", "kelvin", "milisegundos", "segundos",
             "minutos", "horas", "días", "bytes", "kilobytes", "megabytes", "gigabytes",
             "terabytes"
+        };
+
+        private static readonly string[] EnglishConversionUnits =
+        {
+            "millimeters", "centimeters", "meters", "kilometers", "inches", "feet",
+            "yards", "miles", "milligrams", "grams", "kilograms", "ounces", "pounds",
+            "celsius", "fahrenheit", "kelvin", "milliseconds", "seconds", "minutes",
+            "hours", "days", "bytes", "kilobytes", "megabytes", "gigabytes", "terabytes"
         };
 
         public static string BuildSrgs(string languageTag)
@@ -577,6 +694,14 @@ namespace Raudo
                 throw new ArgumentException("Se requiere un idioma para la gramática.", "languageTag");
             }
 
+            bool english = VoiceLanguagePolicy.IsEnglish(languageTag);
+            string[] fixedCommands = english
+                ? EnglishFixedCommands
+                : SpanishFixedCommands;
+            string[] conversionUnits = english
+                ? EnglishConversionUnits
+                : SpanishConversionUnits;
+
             StringBuilder xml = new StringBuilder(50000);
             xml.Append("<?xml version=\"1.0\" encoding=\"utf-8\"?>");
             xml.Append("<grammar version=\"1.0\" xml:lang=\"");
@@ -585,28 +710,41 @@ namespace Raudo
             xml.Append(" xmlns=\"http://www.w3.org/2001/06/grammar\">");
             xml.Append("<rule id=\"command\" scope=\"public\"><item>");
             xml.Append("<item repeat=\"0-1\">raudo</item><one-of>");
-            foreach (string command in FixedCommands)
+            foreach (string command in fixedCommands)
             {
                 xml.Append("<item>");
                 xml.Append(SecurityElement.Escape(command));
                 xml.Append("</item>");
             }
 
-            xml.Append("<item><one-of><item>cuánto es</item><item>cuanto es</item>");
-            xml.Append("<item>calcula</item></one-of><ruleref uri=\"#number\"/>");
-            xml.Append("<one-of><item>por</item><item>más</item><item>mas</item>");
-            xml.Append("<item>menos</item><item>dividido entre</item>");
-            xml.Append("<item>dividido por</item></one-of><ruleref uri=\"#number\"/></item>");
-            xml.Append("<item>convierte<ruleref uri=\"#number\"/><one-of>");
-            foreach (string unit in ConversionUnits)
+            if (english)
+            {
+                xml.Append("<item><one-of><item>what is</item><item>calculate</item>");
+                xml.Append("</one-of><ruleref uri=\"#number\"/><one-of>");
+                xml.Append("<item>times</item><item>multiplied by</item><item>plus</item>");
+                xml.Append("<item>minus</item><item>divided by</item></one-of>");
+                xml.Append("<ruleref uri=\"#number\"/></item>");
+                xml.Append("<item>convert<ruleref uri=\"#number\"/><one-of>");
+            }
+            else
+            {
+                xml.Append("<item><one-of><item>cuánto es</item><item>cuanto es</item>");
+                xml.Append("<item>calcula</item></one-of><ruleref uri=\"#number\"/>");
+                xml.Append("<one-of><item>por</item><item>más</item><item>mas</item>");
+                xml.Append("<item>menos</item><item>dividido entre</item>");
+                xml.Append("<item>dividido por</item></one-of><ruleref uri=\"#number\"/></item>");
+                xml.Append("<item>convierte<ruleref uri=\"#number\"/><one-of>");
+            }
+
+            foreach (string unit in conversionUnits)
             {
                 xml.Append("<item>");
                 xml.Append(SecurityElement.Escape(unit));
                 xml.Append("</item>");
             }
 
-            xml.Append("</one-of>a<one-of>");
-            foreach (string unit in ConversionUnits)
+            xml.Append(english ? "</one-of>to<one-of>" : "</one-of>a<one-of>");
+            foreach (string unit in conversionUnits)
             {
                 xml.Append("<item>");
                 xml.Append(SecurityElement.Escape(unit));
@@ -619,7 +757,10 @@ namespace Raudo
             for (int value = 0; value <= 999; value++)
             {
                 xml.Append("<item>");
-                xml.Append(SecurityElement.Escape(VoiceNumberWords.ToSpanish(value)));
+                xml.Append(SecurityElement.Escape(
+                    english
+                        ? VoiceNumberWords.ToEnglish(value)
+                        : VoiceNumberWords.ToSpanish(value)));
                 xml.Append("</item>");
             }
 
@@ -629,6 +770,13 @@ namespace Raudo
 
         public static IList<string> BuildApplicationPhrases(
             IList<InstalledApplication> applications)
+        {
+            return BuildApplicationPhrases(applications, "es-MX");
+        }
+
+        public static IList<string> BuildApplicationPhrases(
+            IList<InstalledApplication> applications,
+            string languageTag)
         {
             List<string> phrases = new List<string>();
             HashSet<string> unique = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -644,7 +792,11 @@ namespace Raudo
                     break;
                 }
 
-                AddApplicationPhrases(application.Name, phrases, unique);
+                AddApplicationPhrases(
+                    application.Name,
+                    languageTag,
+                    phrases,
+                    unique);
                 if (application.Aliases == null)
                 {
                     continue;
@@ -652,7 +804,7 @@ namespace Raudo
 
                 foreach (string alias in application.Aliases)
                 {
-                    AddApplicationPhrases(alias, phrases, unique);
+                    AddApplicationPhrases(alias, languageTag, phrases, unique);
                     if (phrases.Count >= MaximumApplicationPhrases)
                     {
                         break;
@@ -665,6 +817,7 @@ namespace Raudo
 
         private static void AddApplicationPhrases(
             string value,
+            string languageTag,
             IList<string> phrases,
             ISet<string> unique)
         {
@@ -674,13 +827,16 @@ namespace Raudo
                 return;
             }
 
-            string direct = "abre " + name;
+            string verb = VoiceLanguagePolicy.IsEnglish(languageTag)
+                ? "open "
+                : "abre ";
+            string direct = verb + name;
             if (phrases.Count < MaximumApplicationPhrases && unique.Add(direct))
             {
                 phrases.Add(direct);
             }
 
-            string addressed = "raudo abre " + name;
+            string addressed = "raudo " + verb + name;
             if (phrases.Count < MaximumApplicationPhrases && unique.Add(addressed))
             {
                 phrases.Add(addressed);
@@ -833,6 +989,52 @@ namespace Raudo
             return remainder == 0 ? prefix : prefix + " " + ToSpanish(remainder);
         }
 
+        public static string ToEnglish(int value)
+        {
+            if (value < 0 || value > 999)
+            {
+                throw new ArgumentOutOfRangeException("value");
+            }
+
+            if (value < 20)
+            {
+                string[] small =
+                {
+                    "zero", "one", "two", "three", "four", "five", "six", "seven",
+                    "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen",
+                    "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"
+                };
+                return small[value];
+            }
+
+            if (value < 100)
+            {
+                string[] tensWords =
+                {
+                    string.Empty,
+                    string.Empty,
+                    "twenty",
+                    "thirty",
+                    "forty",
+                    "fifty",
+                    "sixty",
+                    "seventy",
+                    "eighty",
+                    "ninety"
+                };
+                int tens = value / 10;
+                int units = value % 10;
+                return units == 0
+                    ? tensWords[tens]
+                    : tensWords[tens] + " " + ToEnglish(units);
+            }
+
+            int hundreds = value / 100;
+            int remainder = value % 100;
+            string prefix = ToEnglish(hundreds) + " hundred";
+            return remainder == 0 ? prefix : prefix + " " + ToEnglish(remainder);
+        }
+
         private static string Small(int value)
         {
             string[] words =
@@ -852,6 +1054,7 @@ namespace Raudo
             for (int value = 0; value <= 999; value++)
             {
                 values[RaudoActionCatalog.Normalize(ToSpanish(value))] = value;
+                values[RaudoActionCatalog.Normalize(ToEnglish(value))] = value;
             }
 
             return values;

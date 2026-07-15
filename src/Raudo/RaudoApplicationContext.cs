@@ -56,6 +56,7 @@ namespace Raudo
         private KeepActivePhase observedPhase;
         private bool voiceSessionActive;
         private int voiceSessionVersion;
+        private string voiceSessionLanguageTag;
 
         private bool exiting;
         private bool welcomeOpenedAutomatically;
@@ -1204,12 +1205,14 @@ namespace Raudo
                 return;
             }
 
+            voiceSessionLanguageTag = availability.LanguageTag;
             voiceSessionActive = true;
             int sessionVersion = ++voiceSessionVersion;
             voiceOverlayForm.ShowState(
                 VoiceOverlayState.Preparing,
                 "Preparando voz...",
-                "Español (México) · procesamiento local");
+                VoiceLanguagePolicy.DisplayName(voiceSessionLanguageTag)
+                    + " · procesamiento local");
 
             installedApplicationCatalog.EnsureLoading();
             for (int attempt = 0;
@@ -1312,7 +1315,9 @@ namespace Raudo
                     voiceOverlayForm.ShowState(
                         VoiceOverlayState.Listening,
                         "Escuchando...",
-                        "Prueba “abre Excel” o “cuánto es 12 por 8”.");
+                        VoiceLanguagePolicy.IsEnglish(voiceSessionLanguageTag)
+                            ? "Try “open Excel” or “what is 12 times 8”."
+                            : "Prueba “abre Excel” o “cuánto es 12 por 8”.");
                 }
                 else
                 {
