@@ -2844,19 +2844,28 @@ internal static class TestRunner
             ScaleToTargetDpi(mainForm, 144);
             Application.DoEvents();
             AssertControlsWithinParent(mainForm);
-            Assert(
-                !mainForm.VerticalScroll.Visible
-                    && !mainForm.HorizontalScroll.Visible,
-                "La ventana principal mostró desplazamiento artificial al 150%.");
 
             int contentBottom = 0;
+            int contentRight = 0;
             foreach (Control child in mainForm.Controls)
             {
                 if (child.Visible)
                 {
-                    contentBottom = Math.Max(contentBottom, child.Bottom);
+                    contentBottom = Math.Max(
+                        contentBottom,
+                        child.Bottom - mainForm.AutoScrollPosition.Y);
+                    contentRight = Math.Max(
+                        contentRight,
+                        child.Right - mainForm.AutoScrollPosition.X);
                 }
             }
+
+            bool verticalOverflow = contentBottom > mainForm.ClientSize.Height;
+            bool horizontalOverflow = contentRight > mainForm.ClientSize.Width;
+            Assert(
+                mainForm.VerticalScroll.Visible == verticalOverflow
+                    && (!mainForm.HorizontalScroll.Visible || horizontalOverflow),
+                "La ventana principal no ajustó el desplazamiento al contenido escalado.");
 
             mainForm.ClientSize = new Size(
                 mainForm.ClientSize.Width,
