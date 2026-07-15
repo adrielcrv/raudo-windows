@@ -4,6 +4,13 @@ Este proyecto utiliza versionado semántico.
 
 ## [Sin publicar]
 
+## [1.10.2] - 2026-07-15
+
+- La ventana principal conserva su composición y proporciones en pantallas con escala de hasta 200%, incluida una resolución de 2880 x 1800.
+- Al mover Raudo entre monitores con escalas distintas, la interfaz se reconstruye desde medidas lógicas sin acumular ampliaciones ni comprimir controles.
+- Iconos, indicadores, selectores, botones y áreas de interacción personalizados escalan junto con el contenido.
+- La ventana se mantiene dentro del área de trabajo disponible y sólo habilita desplazamiento cuando el contenido realmente no cabe.
+
 ## [1.10.1] - 2026-07-14
 
 - La ventana principal ya no muestra una barra vertical cuando todo su contenido es visible.

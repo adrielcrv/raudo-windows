@@ -229,6 +229,16 @@ internal static class TestRunner
                 return 0;
             }
 
+            if (args.Length == 1 && args[0].StartsWith("--capture-ui-dark-200=", StringComparison.Ordinal))
+            {
+                CaptureUiScaled(
+                    args[0].Substring("--capture-ui-dark-200=".Length),
+                    true,
+                    2F);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
             if (args.Length == 1 && string.Equals(args[0], "--resource-probe", StringComparison.Ordinal))
             {
                 RunResourceProbe();
@@ -788,28 +798,48 @@ internal static class TestRunner
         using (MainForm form = new MainForm(service, new RaudoSettings(), icon))
         {
             form.ApplyTheme(ThemePalette.Create(dark));
-            form.Scale(new SizeF(scaleFactor, scaleFactor));
             form.Show();
             Application.DoEvents();
-            Thread.Sleep(150);
+            int dpi = (int)Math.Round(DpiMetrics.DefaultDpi * scaleFactor);
+            form.ApplyDpiForTesting(
+                dpi,
+                new Rectangle(
+                    0,
+                    0,
+                    (int)Math.Round(1440 * scaleFactor),
+                    (int)Math.Round(900 * scaleFactor)));
+            ScaleFontsForEvidence(form, scaleFactor);
             Application.DoEvents();
+            Console.WriteLine(
+                "Evidence window: Size={0} Client={1} DPI={2}",
+                form.Size,
+                form.ClientSize,
+                form.CurrentDpiForTesting);
             using (Bitmap full = new Bitmap(form.Width, form.Height))
             {
                 form.DrawToBitmap(full, new Rectangle(0, 0, form.Width, form.Height));
-                int border = Math.Max(0, (form.Width - form.ClientSize.Width) / 2);
-                int top = Math.Max(0, form.Height - form.ClientSize.Height - border);
-                Rectangle clientBounds = new Rectangle(
-                    border,
-                    top,
-                    form.ClientSize.Width,
-                    form.ClientSize.Height);
-                using (Bitmap client = full.Clone(clientBounds, PixelFormat.Format32bppArgb))
-                {
-                    client.Save(path, ImageFormat.Png);
-                }
+                full.Save(path, ImageFormat.Png);
             }
 
             form.AllowCloseAndClose();
+        }
+    }
+
+    private static void ScaleFontsForEvidence(Control control, float scaleFactor)
+    {
+        foreach (Control child in control.Controls)
+        {
+            ScaleFontsForEvidence(child, scaleFactor);
+        }
+
+        Font source = control.Font;
+        if (source != null && Math.Abs(scaleFactor - 1F) > 0.001F)
+        {
+            control.Font = new Font(
+                source.FontFamily,
+                source.Size * scaleFactor,
+                source.Style,
+                source.Unit);
         }
     }
 
@@ -2841,9 +2871,64 @@ internal static class TestRunner
                     && !mainForm.HorizontalScroll.Visible,
                 "La ventana principal mostró desplazamiento artificial al 100%.");
             AssertAccessibleControls(mainForm);
-            ScaleToTargetDpi(mainForm, 144);
+
+            mainForm.ApplyDpiForTesting(
+                144,
+                new Rectangle(0, 0, 2160, 1350));
             Application.DoEvents();
             AssertControlsWithinParent(mainForm);
+            Assert(
+                mainForm.CurrentDpiForTesting == 144,
+                "La ventana principal no conservó el DPI aplicado al 150%.");
+
+            mainForm.ApplyDpiForTesting(
+                192,
+                new Rectangle(0, 0, 2880, 1800));
+            Application.DoEvents();
+            AssertControlsWithinParent(mainForm);
+            Assert(
+                mainForm.CurrentDpiForTesting == 192
+                    && mainForm.ClientSize == new Size(1040, 1448),
+                "La ventana principal no reconstruyó su lienzo lógico al 200%.");
+
+            PulseSurface pulseAt200 = null;
+            PreferencesSurface preferencesAt200 = null;
+            foreach (Control child in mainForm.Controls)
+            {
+                if (child is PulseSurface)
+                {
+                    pulseAt200 = (PulseSurface)child;
+                }
+                else if (child is PreferencesSurface)
+                {
+                    preferencesAt200 = (PreferencesSurface)child;
+                }
+            }
+
+            Assert(
+                pulseAt200 != null
+                    && pulseAt200.Bounds == new Rectangle(48, 216, 944, 352)
+                    && preferencesAt200 != null
+                    && preferencesAt200.Bounds == new Rectangle(48, 1096, 944, 248),
+                "La composición principal perdió sus proporciones al 200%.");
+
+            Rectangle cappedBounds = MainWindowLayout.ResolveBounds(
+                new Point(1700, 900),
+                new Size(1046, 1490),
+                new Rectangle(0, 0, 1920, 1032));
+            Assert(
+                cappedBounds == new Rectangle(874, 0, 1046, 1032),
+                "La ventana principal no se limitó al área de trabajo disponible.");
+
+            mainForm.ApplyDpiForTesting(
+                96,
+                new Rectangle(0, 0, 1920, 1032));
+            Application.DoEvents();
+            Assert(
+                mainForm.ClientSize == new Size(520, 724)
+                    && pulseAt200.Bounds == new Rectangle(24, 108, 472, 176)
+                    && preferencesAt200.Bounds == new Rectangle(24, 548, 472, 124),
+                "La ventana principal acumuló escalado al volver de 200% a 100%.");
 
             int contentBottom = 0;
             int contentRight = 0;

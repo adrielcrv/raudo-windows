@@ -145,9 +145,40 @@ namespace Raudo
         }
     }
 
+    internal static class ControlDrawingScale
+    {
+        public static float FromHeight(Control control, int logicalHeight)
+        {
+            if (control == null)
+            {
+                throw new ArgumentNullException("control");
+            }
+
+            return Math.Max(0.5F, control.Height / (float)Math.Max(1, logicalHeight));
+        }
+
+        public static float FromSquare(Control control, int logicalSide)
+        {
+            if (control == null)
+            {
+                throw new ArgumentNullException("control");
+            }
+
+            return Math.Max(
+                0.5F,
+                Math.Min(control.Width, control.Height) / (float)Math.Max(1, logicalSide));
+        }
+
+        public static int Pixel(float logicalPixels, float scale)
+        {
+            return Math.Max(1, (int)Math.Round(logicalPixels * scale));
+        }
+    }
+
     internal class RoundedPanel : Panel
     {
         private Color borderColor;
+        private int radius;
 
         public RoundedPanel()
         {
@@ -157,7 +188,22 @@ namespace Raudo
             Radius = 14;
         }
 
-        public int Radius { get; set; }
+        public int Radius
+        {
+            get { return radius; }
+            set
+            {
+                int normalized = Math.Max(0, value);
+                if (radius == normalized)
+                {
+                    return;
+                }
+
+                radius = normalized;
+                UpdateWindowRegion();
+                Invalidate();
+            }
+        }
 
         public Color BorderColor
         {
@@ -172,6 +218,11 @@ namespace Raudo
         protected override void OnResize(EventArgs eventArgs)
         {
             base.OnResize(eventArgs);
+            UpdateWindowRegion();
+        }
+
+        private void UpdateWindowRegion()
+        {
             if (Width > 1 && Height > 1)
             {
                 using (GraphicsPath path = DrawingPaths.RoundedRectangle(
@@ -235,9 +286,12 @@ namespace Raudo
             focusColor = Color.White;
             TabStop = true;
             AccessibleRole = AccessibleRole.PushButton;
+            DrawingScale = 1F;
         }
 
         public int Radius { get; set; }
+
+        internal float DrawingScale { get; set; }
 
         public Color NormalColor
         {
@@ -391,8 +445,9 @@ namespace Raudo
                 else
                 {
                     SizeF textSize = eventArgs.Graphics.MeasureString(Text, Font);
-                    const float glyphSize = 12F;
-                    const float gap = 9F;
+                    float scale = Math.Max(0.5F, DrawingScale);
+                    float glyphSize = 12F * scale;
+                    float gap = 9F * scale;
                     float contentWidth = glyphSize + gap + textSize.Width;
                     float left = (Width - contentWidth) / 2F;
                     float top = (Height - glyphSize) / 2F;
@@ -413,7 +468,8 @@ namespace Raudo
 
             if (Focused && ShowFocusCues)
             {
-                Rectangle focus = Rectangle.Inflate(bounds, -4, -4);
+                int focusInset = ControlDrawingScale.Pixel(4F, DrawingScale);
+                Rectangle focus = Rectangle.Inflate(bounds, -focusInset, -focusInset);
                 ControlPaint.DrawFocusRectangle(eventArgs.Graphics, focus, FocusColor, fill);
             }
         }
@@ -486,9 +542,9 @@ namespace Raudo
 
                 PointF[] triangle =
                 {
-                    new PointF(left + 1F, top),
+                    new PointF(left + Math.Max(1F, size / 12F), top),
                     new PointF(left + size, top + (size / 2F)),
-                    new PointF(left + 1F, top + size)
+                    new PointF(left + Math.Max(1F, size / 12F), top + size)
                 };
                 graphics.FillPolygon(brush, triangle);
             }
@@ -615,15 +671,18 @@ namespace Raudo
         {
             ThemePalette colors = palette ?? ThemeService.Current();
             eventArgs.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            float scale = ControlDrawingScale.FromHeight(this, 42);
             Rectangle bounds = new Rectangle(0, 0, Width - 1, Height - 1);
             Color borderColor = Focused || pointerOver ? colors.Primary : colors.Border;
             Color textColor = Enabled ? colors.Text : colors.TextFaint;
 
-            using (GraphicsPath path = DrawingPaths.RoundedRectangle(bounds, 8))
+            using (GraphicsPath path = DrawingPaths.RoundedRectangle(
+                bounds,
+                ControlDrawingScale.Pixel(8F, scale)))
             using (SolidBrush fill = new SolidBrush(colors.SurfaceRaised))
             using (Pen border = new Pen(borderColor))
             using (SolidBrush text = new SolidBrush(textColor))
-            using (Pen arrow = new Pen(textColor, 1.6F))
+            using (Pen arrow = new Pen(textColor, Math.Max(1F, 1.6F * scale)))
             using (StringFormat format = new StringFormat())
             {
                 eventArgs.Graphics.FillPath(fill, path);
@@ -633,15 +692,29 @@ namespace Raudo
                     DurationOption.GetLabel(selectedMinutes),
                     Font,
                     text,
-                    new RectangleF(13, 0, Width - 48, Height),
+                    new RectangleF(
+                        13F * scale,
+                        0,
+                        Math.Max(1F, Width - (48F * scale)),
+                        Height),
                     format);
 
                 arrow.StartCap = LineCap.Round;
                 arrow.EndCap = LineCap.Round;
-                float centerX = Width - 20F;
+                float centerX = Width - (20F * scale);
                 float centerY = Height / 2F;
-                eventArgs.Graphics.DrawLine(arrow, centerX - 4F, centerY - 2F, centerX, centerY + 2F);
-                eventArgs.Graphics.DrawLine(arrow, centerX, centerY + 2F, centerX + 4F, centerY - 2F);
+                eventArgs.Graphics.DrawLine(
+                    arrow,
+                    centerX - (4F * scale),
+                    centerY - (2F * scale),
+                    centerX,
+                    centerY + (2F * scale));
+                eventArgs.Graphics.DrawLine(
+                    arrow,
+                    centerX,
+                    centerY + (2F * scale),
+                    centerX + (4F * scale),
+                    centerY - (2F * scale));
             }
         }
 
@@ -681,7 +754,8 @@ namespace Raudo
 
             Focus();
             UpdateChecks();
-            menu.Show(this, new Point(0, Height + 3));
+            float scale = ControlDrawingScale.FromHeight(this, 42);
+            menu.Show(this, new Point(0, Height + ControlDrawingScale.Pixel(3F, scale)));
         }
 
         private void UpdateChecks()
@@ -723,18 +797,27 @@ namespace Raudo
             ThemePalette colors = palette ?? ThemeService.Current();
             eventArgs.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
             Color text = active ? colors.Active : colors.TextMuted;
+            float scale = ControlDrawingScale.FromHeight(this, 28);
+            int dotSize = ControlDrawingScale.Pixel(7F, scale);
+            int dotLeft = ControlDrawingScale.Pixel(1F, scale);
+            int textLeft = ControlDrawingScale.Pixel(16F, scale);
 
             using (SolidBrush dotBrush = new SolidBrush(text))
             using (SolidBrush textBrush = new SolidBrush(text))
             using (StringFormat format = new StringFormat())
             {
-                eventArgs.Graphics.FillEllipse(dotBrush, 1, (Height - 7) / 2, 7, 7);
+                eventArgs.Graphics.FillEllipse(
+                    dotBrush,
+                    dotLeft,
+                    (Height - dotSize) / 2,
+                    dotSize,
+                    dotSize);
                 format.LineAlignment = StringAlignment.Center;
                 eventArgs.Graphics.DrawString(
                     active ? "Activo" : "Inactivo",
                     Font,
                     textBrush,
-                    new RectangleF(16, 0, Width - 16, Height),
+                    new RectangleF(textLeft, 0, Math.Max(1, Width - textLeft), Height),
                     format);
             }
         }
@@ -819,17 +902,30 @@ namespace Raudo
         {
             ThemePalette colors = palette ?? ThemeService.Current();
             eventArgs.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            Rectangle track = new Rectangle(0, 2, Width - 1, Height - 5);
+            float scale = ControlDrawingScale.FromHeight(this, 26);
+            int topInset = ControlDrawingScale.Pixel(2F, scale);
+            int thumbInset = ControlDrawingScale.Pixel(5F, scale);
+            int trackBottomInset = ControlDrawingScale.Pixel(5F, scale);
+            Rectangle track = new Rectangle(
+                0,
+                topInset,
+                Width - 1,
+                Math.Max(1, Height - trackBottomInset));
             Color trackColor = Checked ? colors.Active : colors.TextFaint;
-            int thumbSize = Height - 10;
-            int thumbX = Checked ? Width - thumbSize - 5 : 5;
+            int thumbSize = Math.Max(1, Height - (thumbInset * 2));
+            int thumbX = Checked ? Width - thumbSize - thumbInset : thumbInset;
 
             using (GraphicsPath path = DrawingPaths.RoundedRectangle(track, track.Height / 2))
             using (SolidBrush trackBrush = new SolidBrush(trackColor))
             using (SolidBrush thumbBrush = new SolidBrush(Color.White))
             {
                 eventArgs.Graphics.FillPath(trackBrush, path);
-                eventArgs.Graphics.FillEllipse(thumbBrush, thumbX, 5, thumbSize, thumbSize);
+                eventArgs.Graphics.FillEllipse(
+                    thumbBrush,
+                    thumbX,
+                    thumbInset,
+                    thumbSize,
+                    thumbSize);
             }
 
             if (Focused && ShowFocusCues)
@@ -893,22 +989,25 @@ namespace Raudo
         {
             ThemePalette colors = palette ?? ThemeService.Current();
             eventArgs.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            float scale = ControlDrawingScale.FromSquare(this, 44);
             Rectangle background = new Rectangle(0, 0, Width - 1, Height - 1);
-            using (GraphicsPath path = DrawingPaths.RoundedRectangle(background, 11))
+            using (GraphicsPath path = DrawingPaths.RoundedRectangle(
+                background,
+                ControlDrawingScale.Pixel(11F, scale)))
             using (SolidBrush fill = new SolidBrush(colors.SurfaceRaised))
-            using (Pen line = new Pen(colors.Primary, 2F))
+            using (Pen line = new Pen(colors.Primary, Math.Max(1F, 2F * scale)))
             {
                 line.StartCap = LineCap.Round;
                 line.EndCap = LineCap.Round;
                 eventArgs.Graphics.FillPath(fill, path);
-                eventArgs.Graphics.DrawLine(line, 13, 19, 13, 13);
-                eventArgs.Graphics.DrawLine(line, 13, 13, 19, 13);
-                eventArgs.Graphics.DrawLine(line, 25, 13, 31, 13);
-                eventArgs.Graphics.DrawLine(line, 31, 13, 31, 19);
-                eventArgs.Graphics.DrawLine(line, 31, 25, 31, 31);
-                eventArgs.Graphics.DrawLine(line, 31, 31, 25, 31);
-                eventArgs.Graphics.DrawLine(line, 19, 31, 13, 31);
-                eventArgs.Graphics.DrawLine(line, 13, 31, 13, 25);
+                eventArgs.Graphics.DrawLine(line, 13F * scale, 19F * scale, 13F * scale, 13F * scale);
+                eventArgs.Graphics.DrawLine(line, 13F * scale, 13F * scale, 19F * scale, 13F * scale);
+                eventArgs.Graphics.DrawLine(line, 25F * scale, 13F * scale, 31F * scale, 13F * scale);
+                eventArgs.Graphics.DrawLine(line, 31F * scale, 13F * scale, 31F * scale, 19F * scale);
+                eventArgs.Graphics.DrawLine(line, 31F * scale, 25F * scale, 31F * scale, 31F * scale);
+                eventArgs.Graphics.DrawLine(line, 31F * scale, 31F * scale, 25F * scale, 31F * scale);
+                eventArgs.Graphics.DrawLine(line, 19F * scale, 31F * scale, 13F * scale, 31F * scale);
+                eventArgs.Graphics.DrawLine(line, 13F * scale, 31F * scale, 13F * scale, 25F * scale);
             }
         }
     }
@@ -936,19 +1035,42 @@ namespace Raudo
         {
             ThemePalette colors = palette ?? ThemeService.Current();
             eventArgs.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            float scale = ControlDrawingScale.FromSquare(this, 44);
             Rectangle background = new Rectangle(0, 0, Width - 1, Height - 1);
-            using (GraphicsPath path = DrawingPaths.RoundedRectangle(background, 11))
+            using (GraphicsPath path = DrawingPaths.RoundedRectangle(
+                background,
+                ControlDrawingScale.Pixel(11F, scale)))
             using (SolidBrush fill = new SolidBrush(colors.SurfaceRaised))
-            using (Pen line = new Pen(colors.Primary, 1.8F))
+            using (Pen line = new Pen(colors.Primary, Math.Max(1F, 1.8F * scale)))
             {
                 line.StartCap = LineCap.Round;
                 line.EndCap = LineCap.Round;
                 line.LineJoin = LineJoin.Round;
                 eventArgs.Graphics.FillPath(fill, path);
-                eventArgs.Graphics.DrawRectangle(line, 10, 13, 15, 12);
-                eventArgs.Graphics.DrawRectangle(line, 19, 19, 15, 12);
-                eventArgs.Graphics.DrawLine(line, 12, 29, 17, 29);
-                eventArgs.Graphics.DrawLine(line, 14.5F, 26.5F, 14.5F, 31.5F);
+                eventArgs.Graphics.DrawRectangle(
+                    line,
+                    10F * scale,
+                    13F * scale,
+                    15F * scale,
+                    12F * scale);
+                eventArgs.Graphics.DrawRectangle(
+                    line,
+                    19F * scale,
+                    19F * scale,
+                    15F * scale,
+                    12F * scale);
+                eventArgs.Graphics.DrawLine(
+                    line,
+                    12F * scale,
+                    29F * scale,
+                    17F * scale,
+                    29F * scale);
+                eventArgs.Graphics.DrawLine(
+                    line,
+                    14.5F * scale,
+                    26.5F * scale,
+                    14.5F * scale,
+                    31.5F * scale);
             }
         }
     }

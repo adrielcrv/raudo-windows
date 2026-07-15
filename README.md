@@ -29,6 +29,10 @@ SHA-256 o realizar una instalación no interactiva.
 
 ## Funciones
 
+La ventana principal adapta composición, controles e iconos al cambiar entre
+monitores con escalas distintas, incluido 200%. Si el área de trabajo es menor
+que el contenido, conserva el acceso mediante desplazamiento vertical.
+
 ### Pulso
 
 - Evita temporalmente que el sistema y la pantalla entren en reposo.

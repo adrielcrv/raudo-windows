@@ -69,7 +69,7 @@ namespace Raudo
 
             descriptionLabel = CreateLabel(
                 changes
-                    ? "La ventana usa mejor el espacio y el portapapeles se configura desde Salto."
+                    ? "La ventana mantiene una composición clara al cambiar de pantalla o usar escala de 200%."
                     : "Acciones rápidas, voz local y controles discretos para trabajar en Windows.",
                 9.25F,
                 FontStyle.Regular,
@@ -392,17 +392,17 @@ namespace Raudo
             return new[]
             {
                 new WelcomeFeatureDefinition(
-                    "Portapapeles",
-                    "Configuración directa",
-                    WelcomeFeatureGlyph.Clipboard),
-                new WelcomeFeatureDefinition(
-                    "Ventana limpia",
-                    "Scroll sólo si hace falta",
+                    "Escala 200%",
+                    "Controles proporcionados",
                     WelcomeFeatureGlyph.Displays),
                 new WelcomeFeatureDefinition(
-                    "Bajo demanda",
-                    "Sin escucha ni historial propio",
-                    WelcomeFeatureGlyph.Privacy)
+                    "Cambio de pantalla",
+                    "Composición inmediata",
+                    WelcomeFeatureGlyph.Welcome),
+                new WelcomeFeatureDefinition(
+                    "Área reducida",
+                    "Scroll sólo si hace falta",
+                    WelcomeFeatureGlyph.Tray)
             };
         }
 
@@ -966,10 +966,10 @@ namespace Raudo
             if (showChanges)
             {
                 glyph = feature == 0
-                    ? WelcomeFeatureGlyph.Clipboard
+                    ? WelcomeFeatureGlyph.Displays
                     : (feature == 1
-                        ? WelcomeFeatureGlyph.Displays
-                        : WelcomeFeatureGlyph.Privacy);
+                        ? WelcomeFeatureGlyph.Welcome
+                        : WelcomeFeatureGlyph.Tray);
             }
             else
             {
@@ -1055,8 +1055,8 @@ namespace Raudo
         {
             DrawHeading(
                 graphics,
-                "La interfaz usa el espacio necesario",
-                "Scroll sólo cuando el contenido no cabe",
+                "La interfaz conserva sus proporciones",
+                "Controles nítidos hasta 200% de escala",
                 text,
                 muted);
             FillRound(graphics, new Rectangle(264, 47, 122, 91), 14, raised);
@@ -1181,7 +1181,7 @@ namespace Raudo
             Color muted,
             Color raised)
         {
-            DrawHeading(graphics, "Conoce Raudo sin adivinar", "Una guía breve, una vez por versión", text, muted);
+            DrawHeading(graphics, "Cambia de pantalla con naturalidad", "Raudo recompone la ventana al instante", text, muted);
             Rectangle window = new Rectangle(263, 40, 270, 118);
             FillRound(graphics, window, 15, raised);
             DrawLine(graphics, new Point(284, 66), new Point(394, 66), text, 3F);
@@ -1223,7 +1223,7 @@ namespace Raudo
             Color muted,
             Color raised)
         {
-            DrawHeading(graphics, "La ayuda permanece a mano", "Bienvenida y novedades · bandeja", text, muted);
+            DrawHeading(graphics, "Todo sigue disponible", "Scroll sólo si el área no es suficiente", text, muted);
             FillRound(graphics, new Rectangle(274, 48, 250, 98), 16, raised);
             DrawLine(graphics, new Point(294, 76), new Point(452, 76), text, 3F);
             DrawLine(graphics, new Point(294, 98), new Point(429, 98), muted, 2F);

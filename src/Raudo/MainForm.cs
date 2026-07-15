@@ -33,6 +33,7 @@ namespace Raudo
 
     internal sealed class MainForm : Form
     {
+        private static readonly Size LogicalClientSize = new Size(520, 724);
         private readonly KeepActiveService keepActiveService;
         private readonly RaudoSettings settings;
         private readonly BrandMarkControl brandMark;
@@ -51,6 +52,8 @@ namespace Raudo
         private readonly ToolTip toolTip;
 
         private ThemePalette palette;
+        private DpiMetrics dpiMetrics;
+        private bool applyingDpiLayout;
         private bool allowClose;
         private bool suppressStartupChange;
         private bool suppressMiniModeChange;
@@ -59,10 +62,11 @@ namespace Raudo
         {
             keepActiveService = service;
             settings = currentSettings;
+            dpiMetrics = DpiMetrics.ForDpi(DpiMetrics.DefaultDpi);
 
             Text = "Raudo";
             AccessibleDescription = "Herramientas locales y ligeras para Windows";
-            ClientSize = new Size(520, 724);
+            ClientSize = LogicalClientSize;
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             MinimizeBox = true;
@@ -189,6 +193,19 @@ namespace Raudo
         public event EventHandler<MinimizeRequestedEventArgs> MinimizeRequested;
         public event EventHandler UpdateRestartRequested;
 
+        internal int CurrentDpiForTesting
+        {
+            get { return dpiMetrics.Dpi; }
+        }
+
+        internal void ApplyDpiForTesting(int dpi, Rectangle workingArea)
+        {
+            ApplyDpiLayout(
+                DpiMetrics.ForDpi(dpi),
+                new Rectangle(Location, Size),
+                workingArea);
+        }
+
         public void SelectDuration(int minutes)
         {
             pulseSurface.SetSelectedDuration(minutes, false);
@@ -304,6 +321,8 @@ namespace Raudo
         protected override void OnHandleCreated(EventArgs eventArgs)
         {
             base.OnHandleCreated(eventArgs);
+            dpiMetrics = DpiMetrics.FromControl(this);
+            ApplyDpiLayout(dpiMetrics, Rectangle.Empty, Rectangle.Empty);
             if (palette != null)
             {
                 WindowTheme.Apply(Handle, palette.IsDark);
@@ -312,6 +331,18 @@ namespace Raudo
 
         protected override void WndProc(ref Message message)
         {
+            if (message.Msg == DpiMessage.WindowDpiChanged)
+            {
+                int nextDpi = DpiMessage.GetDpi(message);
+                Rectangle suggestedBounds = DpiMessage.GetSuggestedBounds(message);
+                base.WndProc(ref message);
+                ApplyDpiLayout(
+                    DpiMetrics.ForDpi(nextDpi),
+                    suggestedBounds,
+                    Rectangle.Empty);
+                return;
+            }
+
             const int windowSystemCommand = 0x0112;
             const int minimizeCommand = 0xF020;
             if (!allowClose
@@ -332,6 +363,90 @@ namespace Raudo
             }
 
             base.WndProc(ref message);
+        }
+
+        private void ApplyDpiLayout(
+            DpiMetrics metrics,
+            Rectangle suggestedBounds,
+            Rectangle workingAreaOverride)
+        {
+            if (metrics == null || applyingDpiLayout)
+            {
+                return;
+            }
+
+            applyingDpiLayout = true;
+            SuspendLayout();
+            try
+            {
+                dpiMetrics = metrics;
+                AutoScrollPosition = Point.Empty;
+                ClientSize = metrics.Scale(LogicalClientSize);
+
+                SetScaledBounds(brandMark, 24, 18, 44, 44);
+                SetScaledBounds(titleLabel, 82, 13, 250, 34);
+                SetScaledBounds(subtitleLabel, 83, 45, 280, 22);
+                SetScaledBounds(updateLink, 386, 24, 110, 32);
+                SetScaledBounds(pulseSectionLabel, 24, 84, 180, 20);
+                SetScaledBounds(pulseSurface, 24, 108, 472, 176);
+                pulseSurface.ApplyDpiLayout(metrics);
+                SetScaledBounds(actionsSectionLabel, 24, 304, 180, 20);
+                SetScaledBounds(captureSurface, 24, 328, 472, 76);
+                captureSurface.ApplyDpiLayout(metrics);
+                SetScaledBounds(desktopWorkspaceSurface, 24, 412, 472, 92);
+                desktopWorkspaceSurface.ApplyDpiLayout(metrics);
+                SetScaledBounds(preferencesSectionLabel, 24, 524, 180, 20);
+                SetScaledBounds(preferencesSurface, 24, 548, 472, 124);
+                preferencesSurface.ApplyDpiLayout(metrics);
+                SetScaledBounds(trayHintLabel, 25, 692, 470, 20);
+
+                Rectangle referenceBounds = suggestedBounds.IsEmpty
+                    ? Bounds
+                    : suggestedBounds;
+                Rectangle workingArea = workingAreaOverride.Width > 0
+                        && workingAreaOverride.Height > 0
+                    ? workingAreaOverride
+                    : Screen.FromRectangle(referenceBounds).WorkingArea;
+                Point preferredLocation = suggestedBounds.IsEmpty
+                    ? Location
+                    : suggestedBounds.Location;
+                Rectangle resolved = MainWindowLayout.ResolveBounds(
+                    preferredLocation,
+                    Size,
+                    workingArea);
+                if (suggestedBounds.IsEmpty)
+                {
+                    Size = resolved.Size;
+                }
+                else
+                {
+                    Bounds = resolved;
+                }
+
+                PerformLayout();
+                Invalidate(true);
+            }
+            finally
+            {
+                ResumeLayout(true);
+                applyingDpiLayout = false;
+            }
+        }
+
+        private void SetScaledBounds(
+            Control control,
+            int left,
+            int top,
+            int width,
+            int height)
+        {
+            DashboardLayoutMetrics.SetBounds(
+                control,
+                dpiMetrics,
+                left,
+                top,
+                width,
+                height);
         }
 
         protected override void Dispose(bool disposing)
