@@ -1808,6 +1808,10 @@ namespace Raudo
                 miniForm.PositionChangedByUser += MiniPositionChangedByUser;
                 miniForm.ApplyTheme(ThemeService.Current());
                 miniForm.SetSessionPhase(keepActiveService.Phase);
+                if (miniForm.PlacementMigrationApplied)
+                {
+                    SaveSettings();
+                }
             }
 
             miniForm.ShowMini();
@@ -1850,6 +1854,7 @@ namespace Raudo
         {
             settings.MiniCenterX = eventArgs.Center.X;
             settings.MiniCenterY = eventArgs.Center.Y;
+            MiniPlacementResolver.WriteToSettings(eventArgs.Placement, settings);
             SaveSettings();
         }
 

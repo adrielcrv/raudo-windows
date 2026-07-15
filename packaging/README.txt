@@ -9,7 +9,8 @@ USO
    Inicio sin permisos de administrador.
 3. Presiona Ctrl + Alt + Espacio para abrir Salto y buscar una ventana,
    aplicación, carpeta conocida o acción, realizar un cálculo local o usar un
-   control multimedia.
+   control multimedia. Escribe portapapeles para consultar de forma explícita
+   hasta cinco textos del historial administrado por Windows.
 4. Presiona Ctrl + Alt + V para decir una orden local en español.
 5. Elige una duración e inicia Pulso cuando lo necesites.
 6. Cierra la ventana para conservar Raudo junto al reloj.
@@ -27,7 +28,8 @@ demanda. Salto reduce su tamaño para cálculos y resultados específicos, crece
 hasta cinco filas para búsquedas amplias y mantiene el resto mediante rueda o
 teclado. Puede moverse desde el agarre inferior y alternar tres niveles de
 opacidad con Ctrl + Shift + O. Raudo no recorre el disco ni conserva las
-consultas. Un resultado sólo se copia después de seleccionarlo. Si Ctrl + Alt +
+consultas. El modo portapapeles no mantiene un listener ni un historial propio y
+libera sus textos al salir. Un resultado sólo se copia después de seleccionarlo. Si Ctrl + Alt +
 Espacio ya pertenece a otra aplicación, Salto permanece disponible desde la
 bandeja.
 

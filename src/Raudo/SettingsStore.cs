@@ -8,30 +8,56 @@ namespace Raudo
 {
     internal sealed class RaudoSettings
     {
+        internal const int CurrentSchemaVersion = 2;
+
         public RaudoSettings()
         {
+            SchemaVersion = CurrentSchemaVersion;
             DurationMinutes = 30;
             MiniCenterX = -1;
             MiniCenterY = -1;
+            MiniDockEdge = -1;
+            MiniVerticalRatio = -1D;
             SaltoCenterX = -1;
             SaltoTopY = -1;
             SaltoOpacityPercent = 100;
         }
 
+        public int SchemaVersion { get; set; }
         public int DurationMinutes { get; set; }
         public bool MiniModeEnabled { get; set; }
         public bool MiniHintShown { get; set; }
         public bool DesktopGuideShown { get; set; }
         public int MiniCenterX { get; set; }
         public int MiniCenterY { get; set; }
+        public string MiniMonitorDeviceName { get; set; }
+        public int MiniDockEdge { get; set; }
+        public double MiniVerticalRatio { get; set; }
         public int SaltoCenterX { get; set; }
         public int SaltoTopY { get; set; }
         public int SaltoOpacityPercent { get; set; }
         public long PulseActiveUntilUtcTicks { get; set; }
         public string LastWelcomeVersion { get; set; }
 
+        internal bool HasSemanticMiniPlacement
+        {
+            get
+            {
+                return !string.IsNullOrWhiteSpace(MiniMonitorDeviceName)
+                    && (MiniDockEdge == (int)Raudo.MiniDockEdge.Left
+                        || MiniDockEdge == (int)Raudo.MiniDockEdge.Right)
+                    && MiniVerticalRatio >= 0D
+                    && MiniVerticalRatio <= 1D;
+            }
+        }
+
         public void Normalize()
         {
+            if (SchemaVersion <= 0 || SchemaVersion > CurrentSchemaVersion)
+            {
+                SchemaVersion = CurrentSchemaVersion;
+            }
+
             if (!DurationOption.IsSupported(DurationMinutes))
             {
                 DurationMinutes = 30;
@@ -41,6 +67,13 @@ namespace Raudo
             {
                 MiniCenterX = -1;
                 MiniCenterY = -1;
+            }
+
+            if (!HasSemanticMiniPlacement)
+            {
+                MiniMonitorDeviceName = null;
+                MiniDockEdge = -1;
+                MiniVerticalRatio = -1D;
             }
 
             if (SaltoCenterX < -1 || SaltoTopY < -1)

@@ -64,9 +64,11 @@
     <Compile Include="ActionCatalog.cs" />
     <Compile Include="ApplicationCatalog.cs" />
     <Compile Include="ApplicationAliases.cs" />
+    <Compile Include="ClipboardHistory.cs" />
     <Compile Include="Controls.cs" />
     <Compile Include="DashboardControls.cs" />
     <Compile Include="DesktopGuideForm.cs" />
+    <Compile Include="DisplayMetrics.cs" />
     <Compile Include="GlobalHotKey.cs" />
     <Compile Include="KeepActiveService.cs" />
     <Compile Include="InstallationService.cs" />

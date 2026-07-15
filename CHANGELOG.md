@@ -4,6 +4,17 @@ Este proyecto utiliza versionado semántico.
 
 ## [Sin publicar]
 
+## [1.10.0] - 2026-07-14
+
+- Consulta explícita del historial de portapapeles de Windows al escribir `portapapeles` o `clipboard` en Salto, con filtro opcional y máximo de cinco textos.
+- Resultados efímeros que se liberan al cambiar de consulta, ocultar Salto o cerrar la ventana; sin listener, historial propio, escritura en disco o telemetría.
+- Estados claros para historial desactivado, acceso denegado, ausencia de resultados y carga superior a 120 ms, con cancelación de consultas obsoletas.
+- Métricas DPI centralizadas para superficies dibujadas, relayout inmediato con `WM_DPICHANGED` y corrección no animada que respeta la preferencia de movimiento de Windows.
+- Posición semántica de Mini por monitor, borde y altura relativa, con migración de coordenadas anteriores y alternativa visible cuando una pantalla se desconecta.
+- Reanudación coherente de transiciones de Mini después de cambiar escala y finalización transaccional de transiciones de Salto para evitar geometría superpuesta.
+- Pantalla de novedades actualizada para explicar el portapapeles bajo demanda, pantallas mixtas y el límite de privacidad local.
+- Cobertura ampliada para monitores con coordenadas negativas, cambios de resolución, desconexión, DPI al 150%, cancelación asíncrona, historial desactivado y consumo en reposo.
+
 ## [1.9.1] - 2026-07-14
 
 - Actualización más robusta cuando Raudo termina justo mientras Windows verifica el proceso que solicitó el reemplazo.

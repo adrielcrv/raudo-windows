@@ -10,12 +10,14 @@ namespace Raudo
 {
     internal sealed class MiniPositionChangedEventArgs : EventArgs
     {
-        public MiniPositionChangedEventArgs(Point center)
+        public MiniPositionChangedEventArgs(Point center, MiniPlacement placement)
         {
             Center = center;
+            Placement = placement;
         }
 
         public Point Center { get; private set; }
+        public MiniPlacement Placement { get; private set; }
     }
 
     internal sealed class MiniForm : Form
@@ -44,6 +46,9 @@ namespace Raudo
         private readonly ToolTip toolTip;
 
         private ThemePalette palette;
+        private DpiMetrics dpiMetrics;
+        private DisplaySnapshot resolvedDisplay;
+        private MiniPlacement placement;
         private Point dockAnchor;
         private Point dragStartCursor;
         private Point dragStartLocation;
@@ -121,7 +126,14 @@ namespace Raudo
             DoubleBuffered = true;
             KeyPreview = true;
 
-            dockAnchor = GetInitialDockAnchor(settings);
+            dpiMetrics = DpiMetrics.ForDpi(DpiMetrics.DefaultDpi);
+            bool migrated;
+            placement = MiniPlacementResolver.FromSettings(
+                settings,
+                DisplaySnapshot.Capture(),
+                out migrated);
+            PlacementMigrationApplied = migrated;
+            RefreshPlacementResolution();
 
             windowMenu = new ContextMenuStrip();
             windowMenu.Font = new Font("Segoe UI", 9.5F, FontStyle.Regular, GraphicsUnit.Point);
@@ -182,6 +194,8 @@ namespace Raudo
             get { return followsActiveDesktop; }
         }
 
+        internal bool PlacementMigrationApplied { get; private set; }
+
         protected override bool ShowWithoutActivation
         {
             get { return true; }
@@ -240,7 +254,7 @@ namespace Raudo
 
         public void EnsureVisibleOnScreen()
         {
-            dockAnchor = ClampDockAnchor(dockAnchor);
+            RefreshPlacementResolution();
             LayoutAtAnchor();
         }
 
@@ -260,6 +274,11 @@ namespace Raudo
         internal void SetExpandedForTesting(bool shouldExpand)
         {
             SetExpanded(shouldExpand, false);
+        }
+
+        internal void SetExpandedAnimatedForTesting(bool shouldExpand)
+        {
+            SetExpanded(shouldExpand, true);
         }
 
         internal bool IsAnimationRunningForTesting
@@ -299,8 +318,32 @@ namespace Raudo
 
         internal void SetDpiForTesting(int dpi)
         {
-            testingDpi = Math.Max(96, dpi);
+            testingDpi = Math.Max(DpiMetrics.DefaultDpi, dpi);
+            dpiMetrics = DpiMetrics.ForDpi(testingDpi);
+            RefreshPlacementResolution();
             ApplyRevealProgress(revealProgress);
+        }
+
+        internal void RebaseDpiForTesting(int dpi)
+        {
+            bool resumeAnimation = animationTimer.Enabled;
+            double targetProgress = animationTargetProgress;
+            animationTimer.Stop();
+            testingDpi = Math.Max(DpiMetrics.DefaultDpi, dpi);
+            dpiMetrics = DpiMetrics.ForDpi(testingDpi);
+            RefreshPlacementResolution();
+            ApplyRevealProgress(revealProgress);
+            ResumeRevealAnimation(resumeAnimation, targetProgress);
+        }
+
+        internal Point DockAnchorForTesting
+        {
+            get { return dockAnchor; }
+        }
+
+        internal MiniPlacement PlacementForTesting
+        {
+            get { return placement; }
         }
 
         internal IList<string> BuildMenuLabelsForTesting(MediaSessionSnapshot snapshot)
@@ -325,6 +368,10 @@ namespace Raudo
         protected override void OnHandleCreated(EventArgs eventArgs)
         {
             base.OnHandleCreated(eventArgs);
+            dpiMetrics = testingDpi > 0
+                ? DpiMetrics.ForDpi(testingDpi)
+                : DpiMetrics.FromControl(this);
+            RefreshPlacementResolution();
             ApplyRevealProgress(revealProgress);
             LayoutAtAnchor();
             UpdateWindowRegion();
@@ -340,6 +387,25 @@ namespace Raudo
             UpdateWindowRegion();
         }
 
+        protected override void WndProc(ref Message message)
+        {
+            if (message.Msg == DpiMessage.WindowDpiChanged)
+            {
+                int nextDpi = DpiMessage.GetDpi(message);
+                bool resumeAnimation = animationTimer.Enabled;
+                double targetProgress = animationTargetProgress;
+                animationTimer.Stop();
+                dpiMetrics = DpiMetrics.ForDpi(nextDpi);
+                base.WndProc(ref message);
+                RefreshPlacementResolution();
+                ApplyRevealProgress(revealProgress);
+                ResumeRevealAnimation(resumeAnimation, targetProgress);
+                return;
+            }
+
+            base.WndProc(ref message);
+        }
+
         protected override void OnPaint(PaintEventArgs eventArgs)
         {
             base.OnPaint(eventArgs);
@@ -347,9 +413,7 @@ namespace Raudo
             eventArgs.Graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
 
             Rectangle bounds = new Rectangle(0, 0, ClientSize.Width - 1, ClientSize.Height - 1);
-            bool dockedLeft = IsDockedLeft(
-                dockAnchor,
-                Screen.FromPoint(dockAnchor).WorkingArea);
+            bool dockedLeft = placement.Edge == MiniDockEdge.Left;
             float progress = (float)revealProgress;
             float edgeOpacity = 1F - Remap(progress, 0F, 0.42F);
             float contentOpacity = Remap(progress, 0.46F, 1F);
@@ -552,11 +616,15 @@ namespace Raudo
 
             if (wasDragging)
             {
-                dockAnchor = GetDockAnchor(Cursor.Position);
+                IList<DisplaySnapshot> displays = DisplaySnapshot.Capture();
+                placement = MiniPlacementResolver.Capture(Cursor.Position, displays);
+                RefreshPlacementResolution(displays);
                 EventHandler<MiniPositionChangedEventArgs> positionHandler = PositionChangedByUser;
                 if (positionHandler != null)
                 {
-                    positionHandler(this, new MiniPositionChangedEventArgs(dockAnchor));
+                    positionHandler(
+                        this,
+                        new MiniPositionChangedEventArgs(dockAnchor, placement));
                 }
 
                 SetExpanded(false);
@@ -1111,6 +1179,29 @@ namespace Raudo
             }
         }
 
+        private void ResumeRevealAnimation(bool shouldResume, double targetProgress)
+        {
+            if (!shouldResume || Math.Abs(targetProgress - revealProgress) < 0.001D)
+            {
+                return;
+            }
+
+            if (!MotionSettings.ClientAreaAnimationsEnabled())
+            {
+                ApplyRevealProgress(targetProgress);
+                return;
+            }
+
+            animationStartProgress = revealProgress;
+            animationTargetProgress = targetProgress;
+            double distance = Math.Abs(animationTargetProgress - animationStartProgress);
+            animationDurationMilliseconds = Math.Max(
+                1,
+                (int)Math.Round(MiniMotion.TransitionDurationMilliseconds * distance));
+            animationStartTimestamp = Stopwatch.GetTimestamp();
+            animationTimer.Start();
+        }
+
         private void AttentionTimerTick(object sender, EventArgs eventArgs)
         {
             double elapsedMilliseconds = (Stopwatch.GetTimestamp() - attentionStartTimestamp)
@@ -1617,9 +1708,7 @@ namespace Raudo
             int centerWidth = ScaleLogical(CenterZoneWidth);
             int trackWidth = ScaleLogical(TrackZoneWidth);
             int moreWidth = ScaleLogical(MoreZoneWidth);
-            bool dockedLeft = IsDockedLeft(
-                dockAnchor,
-                Screen.FromPoint(dockAnchor).WorkingArea);
+            bool dockedLeft = placement.Edge == MiniDockEdge.Left;
             int contentOffset = dockedLeft ? 0 : ClientSize.Width - GetExpandedWidth();
             int cursor = contentOffset;
             if (zone == MiniHitZone.DesktopLeft)
@@ -1682,10 +1771,13 @@ namespace Raudo
 
         private void LayoutAtAnchor()
         {
-            dockAnchor = ClampDockAnchor(dockAnchor);
-            Screen screen = Screen.FromPoint(dockAnchor);
-            Rectangle area = screen.WorkingArea;
-            bool dockedLeft = IsDockedLeft(dockAnchor, area);
+            if (resolvedDisplay == null)
+            {
+                RefreshPlacementResolution();
+            }
+
+            Rectangle area = resolvedDisplay.WorkingArea;
+            bool dockedLeft = placement.Edge == MiniDockEdge.Left;
             Size requested = GetRequestedSize();
             int x = dockedLeft
                 ? area.Left
@@ -1713,28 +1805,19 @@ namespace Raudo
             }
         }
 
-        private static Point ClampDockAnchor(Point anchor)
+        private void RefreshPlacementResolution()
         {
-            Screen screen = Screen.FromPoint(anchor);
-            Rectangle area = screen.WorkingArea;
-            bool dockedLeft = IsDockedLeft(anchor, area);
-            int yMargin = ControlHeight / 2 + 4;
-            return new Point(
-                dockedLeft ? area.Left : area.Right - 1,
-                Math.Max(
-                    area.Top + yMargin,
-                    Math.Min(area.Bottom - yMargin, anchor.Y)));
+            RefreshPlacementResolution(DisplaySnapshot.Capture());
         }
 
-        private static Point GetDockAnchor(Point cursor)
+        private void RefreshPlacementResolution(IList<DisplaySnapshot> displays)
         {
-            Screen screen = Screen.FromPoint(cursor);
-            Rectangle area = screen.WorkingArea;
-            return new Point(
-                Math.Abs(cursor.X - area.Left) <= Math.Abs(cursor.X - (area.Right - 1))
-                    ? area.Left
-                    : area.Right - 1,
-                cursor.Y);
+            dockAnchor = MiniPlacementResolver.Resolve(
+                placement,
+                displays,
+                dpiMetrics.Scale(ControlHeight),
+                dpiMetrics.Scale(4),
+                out resolvedDisplay);
         }
 
         private static Point ClampDragLocation(Point requested, Size size)
@@ -1748,35 +1831,16 @@ namespace Raudo
                 Math.Max(area.Top + 4, Math.Min(area.Bottom - size.Height - 4, requested.Y)));
         }
 
-        private static Point GetInitialDockAnchor(RaudoSettings settings)
-        {
-            if (settings.MiniCenterX >= 0 && settings.MiniCenterY >= 0)
-            {
-                return ClampDockAnchor(new Point(
-                    settings.MiniCenterX,
-                    settings.MiniCenterY));
-            }
-
-            Rectangle area = Screen.PrimaryScreen.WorkingArea;
-            return new Point(area.Right - 1, area.Bottom - 72);
-        }
-
-        private static bool IsDockedLeft(Point anchor, Rectangle area)
-        {
-            return Math.Abs(anchor.X - area.Left)
-                <= Math.Abs(anchor.X - (area.Right - 1));
-        }
-
         private void UpdateWindowRegion()
         {
-            if (ClientSize.Width <= 0 || ClientSize.Height <= 0)
+            if (placement == null
+                || ClientSize.Width <= 0
+                || ClientSize.Height <= 0)
             {
                 return;
             }
 
-            bool dockedLeft = IsDockedLeft(
-                dockAnchor,
-                Screen.FromPoint(dockAnchor).WorkingArea);
+            bool dockedLeft = placement.Edge == MiniDockEdge.Left;
             using (GraphicsPath path = CreateContainerPath(
                 new Rectangle(0, 0, ClientSize.Width, ClientSize.Height),
                 dockedLeft,
@@ -1813,10 +1877,7 @@ namespace Raudo
 
         private int ScaleLogical(int logicalPixels)
         {
-            int dpi = testingDpi > 0
-                ? testingDpi
-                : (IsHandleCreated ? DeviceDpi : 96);
-            return Math.Max(1, (logicalPixels * dpi + 48) / 96);
+            return dpiMetrics.Scale(logicalPixels);
         }
 
         private static Color BlendColor(Color from, Color to, float amount)

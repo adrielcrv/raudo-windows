@@ -319,6 +319,42 @@ internal static class TestRunner
             }
 
             if (args.Length == 1
+                && args[0].StartsWith("--capture-salto-clipboard-dark=", StringComparison.Ordinal))
+            {
+                CaptureSaltoClipboard(
+                    args[0].Substring("--capture-salto-clipboard-dark=".Length),
+                    true,
+                    96,
+                    ClipboardHistoryQueryStatus.Success);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
+                && args[0].StartsWith("--capture-salto-clipboard-light-150=", StringComparison.Ordinal))
+            {
+                CaptureSaltoClipboard(
+                    args[0].Substring("--capture-salto-clipboard-light-150=".Length),
+                    false,
+                    144,
+                    ClipboardHistoryQueryStatus.Success);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
+                && args[0].StartsWith("--capture-salto-clipboard-disabled-dark=", StringComparison.Ordinal))
+            {
+                CaptureSaltoClipboard(
+                    args[0].Substring("--capture-salto-clipboard-disabled-dark=".Length),
+                    true,
+                    96,
+                    ClipboardHistoryQueryStatus.Disabled);
+                Console.WriteLine("PASS");
+                return 0;
+            }
+
+            if (args.Length == 1
                 && args[0].StartsWith("--capture-salto-loading-dark=", StringComparison.Ordinal))
             {
                 CaptureSaltoLoading(
@@ -1945,6 +1981,83 @@ internal static class TestRunner
     private static void RunUnitTests()
     {
         TestVoiceCommands();
+        DpiMetrics dpi100 = DpiMetrics.ForDpi(96);
+        DpiMetrics dpi150 = DpiMetrics.ForDpi(144);
+        Assert(
+            dpi100.Scale(20) == 20
+                && dpi150.Scale(20) == 30
+                && dpi150.Scale(new Size(48, 32)) == new Size(72, 48),
+            "Las métricas DPI no conservan la geometría lógica esperada.");
+
+        List<DisplaySnapshot> testDisplays = new List<DisplaySnapshot>();
+        testDisplays.Add(new DisplaySnapshot(
+            "DISPLAY-PRIMARY",
+            new Rectangle(0, 0, 1920, 1080),
+            new Rectangle(0, 0, 1920, 1040),
+            true));
+        testDisplays.Add(new DisplaySnapshot(
+            "DISPLAY-LEFT",
+            new Rectangle(-2560, 0, 2560, 1440),
+            new Rectangle(-2560, 0, 2560, 1400),
+            false));
+
+        MiniPlacement capturedPlacement = MiniPlacementResolver.Capture(
+            new Point(-2550, 700),
+            testDisplays);
+        Assert(
+            capturedPlacement.DeviceName == "DISPLAY-LEFT"
+                && capturedPlacement.Edge == MiniDockEdge.Left
+                && Math.Abs(capturedPlacement.VerticalRatio - 0.5D) < 0.001D,
+            "La colocación semántica de Mini no reconoce monitores con coordenadas negativas.");
+
+        List<DisplaySnapshot> resizedDisplays = new List<DisplaySnapshot>();
+        resizedDisplays.Add(testDisplays[0]);
+        resizedDisplays.Add(new DisplaySnapshot(
+            "DISPLAY-LEFT",
+            new Rectangle(-1920, 0, 1920, 1080),
+            new Rectangle(-1920, 0, 1920, 1000),
+            false));
+        DisplaySnapshot resolvedDisplay;
+        Point resizedAnchor = MiniPlacementResolver.Resolve(
+            capturedPlacement,
+            resizedDisplays,
+            72,
+            6,
+            out resolvedDisplay);
+        Assert(
+            resolvedDisplay.DeviceName == "DISPLAY-LEFT"
+                && resizedAnchor == new Point(-1920, 500),
+            "Mini no conserva borde y altura relativa después de cambiar la resolución.");
+
+        List<DisplaySnapshot> primaryOnly = new List<DisplaySnapshot>();
+        primaryOnly.Add(testDisplays[0]);
+        Point fallbackAnchor = MiniPlacementResolver.Resolve(
+            capturedPlacement,
+            primaryOnly,
+            48,
+            4,
+            out resolvedDisplay);
+        Assert(
+            resolvedDisplay.DeviceName == "DISPLAY-PRIMARY"
+                && fallbackAnchor.X == 0
+                && fallbackAnchor.Y == 520,
+            "Mini no encuentra una ubicación visible cuando el monitor guardado no está disponible.");
+
+        RaudoSettings legacyPlacementSettings = new RaudoSettings();
+        legacyPlacementSettings.MiniCenterX = 1919;
+        legacyPlacementSettings.MiniCenterY = 780;
+        bool placementMigrated;
+        MiniPlacement migratedPlacement = MiniPlacementResolver.FromSettings(
+            legacyPlacementSettings,
+            testDisplays,
+            out placementMigrated);
+        Assert(
+            placementMigrated
+                && migratedPlacement.DeviceName == "DISPLAY-PRIMARY"
+                && migratedPlacement.Edge == MiniDockEdge.Right
+                && legacyPlacementSettings.HasSemanticMiniPlacement,
+            "La posición física anterior de Mini no migró al nuevo contrato semántico.");
+
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
         using (Icon welcomeIcon = IconFactory.Create(false))
@@ -2009,6 +2122,9 @@ internal static class TestRunner
             settings.MiniHintShown = true;
             settings.MiniCenterX = 420;
             settings.MiniCenterY = 360;
+            settings.MiniMonitorDeviceName = "DISPLAY-PRIMARY";
+            settings.MiniDockEdge = (int)MiniDockEdge.Right;
+            settings.MiniVerticalRatio = 0.75D;
             settings.SaltoCenterX = 760;
             settings.SaltoTopY = 180;
             settings.SaltoOpacityPercent = 82;
@@ -2029,6 +2145,12 @@ internal static class TestRunner
             Assert(
                 loaded.MiniCenterX == 420 && loaded.MiniCenterY == 360,
                 "La posición del Modo Mini no sobrevivió al guardado.");
+            Assert(
+                loaded.SchemaVersion == RaudoSettings.CurrentSchemaVersion
+                    && loaded.MiniMonitorDeviceName == "DISPLAY-PRIMARY"
+                    && loaded.MiniDockEdge == (int)MiniDockEdge.Right
+                    && Math.Abs(loaded.MiniVerticalRatio - 0.75D) < 0.001D,
+                "La colocación semántica de Mini no sobrevivió al guardado.");
             Assert(
                 loaded.SaltoCenterX == 760 && loaded.SaltoTopY == 180,
                 "La posición de Salto no sobrevivió al guardado.");
@@ -2338,6 +2460,125 @@ internal static class TestRunner
             actionInvocationCount == 2,
             "El catálogo no ejecutó el control multimedia seleccionado.");
 
+        string clipboardFilter;
+        Assert(
+            ClipboardHistoryQuery.TryParse("portapapeles", out clipboardFilter)
+                && clipboardFilter.Length == 0
+                && ClipboardHistoryQuery.TryParse(
+                    "Portapapeles presupuesto trimestral",
+                    out clipboardFilter)
+                && clipboardFilter == "presupuesto trimestral"
+                && ClipboardHistoryQuery.TryParse("clipboard link", out clipboardFilter)
+                && clipboardFilter == "link"
+                && !ClipboardHistoryQuery.TryParse(
+                    "abre el portapapeles",
+                    out clipboardFilter),
+            "El modo de portapapeles no exige una consulta explícita.");
+        ClipboardHistoryEntry previewEntry = new ClipboardHistoryEntry(
+            "Primera línea\r\nSegunda línea\tcon datos");
+        Assert(
+            previewEntry.Preview == "Primera línea Segunda línea con datos"
+                && ClipboardHistoryProvider.MaximumTextCharacters == 65536,
+            "La vista previa o el límite de memoria del portapapeles cambió.");
+
+        FakeClipboardHistoryProvider clipboardSuccess =
+            new FakeClipboardHistoryProvider(new ClipboardHistoryQueryResult(
+                ClipboardHistoryQueryStatus.Success,
+                new List<ClipboardHistoryEntry>
+                {
+                    new ClipboardHistoryEntry("Presupuesto trimestral"),
+                    new ClipboardHistoryEntry("https://intranet.example/"),
+                    new ClipboardHistoryEntry("Revisión del lunes"),
+                    new ClipboardHistoryEntry("42,500"),
+                    new ClipboardHistoryEntry("Notas de la reunión"),
+                    new ClipboardHistoryEntry("Este sexto texto no debe mostrarse")
+                }));
+        using (SaltoForm clipboardForm = new SaltoForm(
+            actionCatalog,
+            new RaudoSettings(),
+            delegate { return false; },
+            clipboardSuccess))
+        {
+            clipboardForm.ApplyTheme(ThemePalette.Create(false));
+            clipboardForm.SetQueryForTesting("portapapeles presupuesto");
+            Application.DoEvents();
+            Assert(
+                clipboardSuccess.CallCount == 1
+                    && clipboardSuccess.LastFilter == "presupuesto"
+                    && clipboardForm.ClipboardModeForTesting
+                    && !clipboardForm.ClipboardQueryPendingForTesting
+                    && clipboardForm.ClipboardStatusForTesting
+                        == ClipboardHistoryQueryStatus.Success
+                    && clipboardForm.ResultCountForTesting == 5
+                    && clipboardForm.SelectedActionKindForTesting
+                        == RaudoActionKind.Clipboard
+                    && clipboardForm.KeyboardHintForTesting.EndsWith(
+                        "copiar",
+                        StringComparison.Ordinal),
+                "Salto no presentó el historial efímero como acciones de copia.");
+            clipboardForm.HideSalto();
+            Assert(
+                !clipboardForm.ClipboardModeForTesting
+                    && clipboardForm.ResultCountForTesting == 0,
+                "Salto retuvo textos del portapapeles después de ocultarse.");
+            clipboardForm.AllowCloseAndClose();
+        }
+
+        FakeClipboardHistoryProvider clipboardDisabled =
+            new FakeClipboardHistoryProvider(new ClipboardHistoryQueryResult(
+                ClipboardHistoryQueryStatus.Disabled,
+                new List<ClipboardHistoryEntry>()));
+        using (SaltoForm clipboardDisabledForm = new SaltoForm(
+            actionCatalog,
+            new RaudoSettings(),
+            delegate { return false; },
+            clipboardDisabled))
+        {
+            clipboardDisabledForm.ApplyTheme(ThemePalette.Create(true));
+            clipboardDisabledForm.SetQueryForTesting("portapapeles");
+            Application.DoEvents();
+            Assert(
+                clipboardDisabledForm.PresentationModeForTesting
+                    == SaltoPresentationMode.Empty
+                    && clipboardDisabledForm.LoadingTextForTesting.IndexOf(
+                        "Win + V",
+                        StringComparison.Ordinal) >= 0,
+                "Salto no explicó el estado esperado de historial desactivado.");
+            clipboardDisabledForm.AllowCloseAndClose();
+        }
+
+        FakeClipboardHistoryProvider clipboardPending =
+            new FakeClipboardHistoryProvider();
+        using (SaltoForm clipboardPendingForm = new SaltoForm(
+            actionCatalog,
+            new RaudoSettings(),
+            delegate { return false; },
+            clipboardPending))
+        {
+            clipboardPendingForm.ApplyTheme(ThemePalette.Create(false));
+            clipboardPendingForm.ShowSalto();
+            clipboardPendingForm.SetQueryForTesting("clipboard");
+            Assert(
+                clipboardPendingForm.ClipboardQueryPendingForTesting
+                    && clipboardPendingForm.PresentationModeForTesting
+                        != SaltoPresentationMode.Loading,
+                "Salto mostró carga antes del umbral discreto.");
+            clipboardPendingForm.ShowClipboardLoadingForTesting();
+            Assert(
+                clipboardPendingForm.PresentationModeForTesting
+                    == SaltoPresentationMode.Loading
+                    && clipboardPendingForm.LoadingTextForTesting
+                        == "Consultando historial…",
+                "El estado reducido de carga del portapapeles no es estable.");
+            clipboardPendingForm.SetQueryForTesting("excel");
+            Application.DoEvents();
+            Assert(
+                clipboardPending.CancellationObserved
+                    && !clipboardPendingForm.ClipboardModeForTesting,
+                "Una consulta posterior no canceló el acceso anterior al portapapeles.");
+            clipboardPendingForm.AllowCloseAndClose();
+        }
+
         InstalledApplicationCatalog installedCatalog =
             new InstalledApplicationCatalog(delegate
             {
@@ -2435,6 +2676,27 @@ internal static class TestRunner
             ScaleToTargetDpi(salto, 144);
             AssertControlsWithinParent(salto);
             salto.AllowCloseAndClose();
+        }
+
+        using (SaltoForm saltoDpi = new SaltoForm(actionCatalog, new RaudoSettings()))
+        {
+            saltoDpi.SetQueryForTesting("132 * 432");
+            Assert(
+                saltoDpi.PresentationModeForTesting == SaltoPresentationMode.Answer,
+                "La prueba DPI de Salto no alcanzó su estado compacto.");
+            Rectangle workArea = Screen.PrimaryScreen.WorkingArea;
+            Rectangle suggestedBounds = new Rectangle(
+                workArea.Left + ((workArea.Width - saltoDpi.Width) / 2),
+                workArea.Top + 40,
+                saltoDpi.Width,
+                saltoDpi.Height);
+            saltoDpi.ApplyDpiChangeForTesting(144, suggestedBounds);
+            Assert(
+                saltoDpi.ClientSize == new Size(780, 324)
+                    && workArea.Contains(saltoDpi.Bounds),
+                "Salto no resolvió su tamaño lógico ni permaneció dentro del monitor al cambiar DPI.");
+            AssertControlsWithinParent(saltoDpi);
+            saltoDpi.AllowCloseAndClose();
         }
 
         RaudoSettings saltoSettings = new RaudoSettings();
@@ -2653,7 +2915,19 @@ internal static class TestRunner
             mini.SetExpandedForTesting(true);
             Assert(
                 mini.ClientSize == new Size(396, 72),
-                "El controlador Mini no conserva su geometría al 150 por ciento.");
+                "El controlador Mini no conserva su geometría al 150 por ciento: "
+                    + mini.ClientSize.Width
+                    + " x "
+                    + mini.ClientSize.Height
+                    + ".");
+            mini.SetExpandedForTesting(false);
+            mini.SetExpandedAnimatedForTesting(true);
+            bool animationWasRunning = mini.IsAnimationRunningForTesting;
+            mini.RebaseDpiForTesting(192);
+            Assert(
+                mini.ClientSize.Height == 96
+                    && (!animationWasRunning || mini.IsAnimationRunningForTesting),
+                "El cambio de DPI no reanudó de forma coherente la transición de Mini.");
             mini.AllowCloseAndClose();
         }
 
@@ -3513,6 +3787,93 @@ internal static class TestRunner
 
         public void Dispose()
         {
+        }
+    }
+
+    private static void CaptureSaltoClipboard(
+        string path,
+        bool dark,
+        int dpi,
+        ClipboardHistoryQueryStatus status)
+    {
+        Application.EnableVisualStyles();
+        Application.SetCompatibleTextRenderingDefault(false);
+        IList<ClipboardHistoryEntry> entries = status == ClipboardHistoryQueryStatus.Success
+            ? (IList<ClipboardHistoryEntry>)new List<ClipboardHistoryEntry>
+            {
+                new ClipboardHistoryEntry("Presupuesto trimestral · versión final"),
+                new ClipboardHistoryEntry("https://intranet.example/proyectos/raudo"),
+                new ClipboardHistoryEntry("Revisar cifras antes de la reunión")
+            }
+            : new List<ClipboardHistoryEntry>();
+        FakeClipboardHistoryProvider provider = new FakeClipboardHistoryProvider(
+            new ClipboardHistoryQueryResult(status, entries));
+        RaudoActionCatalog catalog = CreateTestActionCatalog(null);
+        using (SaltoForm form = new SaltoForm(
+            catalog,
+            new RaudoSettings(),
+            delegate { return true; },
+            provider))
+        {
+            form.ApplyTheme(ThemePalette.Create(dark));
+            form.ShowSalto();
+            form.SetQueryForTesting("portapapeles");
+            WaitWithMessages(220);
+            if (dpi > 96)
+            {
+                ScaleToTargetDpi(form, dpi);
+            }
+
+            Assert(
+                form.ClipboardModeForTesting,
+                "La captura no alcanzó el modo de portapapeles.");
+            using (Bitmap bitmap = new Bitmap(form.ClientSize.Width, form.ClientSize.Height))
+            {
+                form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, form.ClientSize));
+                bitmap.Save(path, ImageFormat.Png);
+            }
+
+            form.AllowCloseAndClose();
+        }
+    }
+
+    private sealed class FakeClipboardHistoryProvider : IClipboardHistoryProvider
+    {
+        private readonly ClipboardHistoryQueryResult immediateResult;
+        private readonly TaskCompletionSource<ClipboardHistoryQueryResult> completion;
+
+        public FakeClipboardHistoryProvider()
+        {
+            completion = new TaskCompletionSource<ClipboardHistoryQueryResult>();
+        }
+
+        public FakeClipboardHistoryProvider(ClipboardHistoryQueryResult result)
+        {
+            immediateResult = result;
+        }
+
+        public int CallCount { get; private set; }
+        public string LastFilter { get; private set; }
+        public bool CancellationObserved { get; private set; }
+
+        public Task<ClipboardHistoryQueryResult> QueryAsync(
+            string filter,
+            int maximumItems,
+            CancellationToken cancellationToken)
+        {
+            CallCount++;
+            LastFilter = filter;
+            if (immediateResult != null)
+            {
+                return Task.FromResult(immediateResult);
+            }
+
+            cancellationToken.Register(delegate
+            {
+                CancellationObserved = true;
+                completion.TrySetCanceled();
+            });
+            return completion.Task;
         }
     }
 
