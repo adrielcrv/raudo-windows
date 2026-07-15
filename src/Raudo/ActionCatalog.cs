@@ -40,6 +40,7 @@ namespace Raudo
         Calculation,
         Conversion,
         Clipboard,
+        Settings,
         Folder,
         Media
     }

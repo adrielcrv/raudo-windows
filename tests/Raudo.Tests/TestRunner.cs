@@ -2539,11 +2539,18 @@ internal static class TestRunner
             Application.DoEvents();
             Assert(
                 clipboardDisabledForm.PresentationModeForTesting
-                    == SaltoPresentationMode.Empty
-                    && clipboardDisabledForm.LoadingTextForTesting.IndexOf(
-                        "Win + V",
-                        StringComparison.Ordinal) >= 0,
-                "Salto no explicó el estado esperado de historial desactivado.");
+                    == SaltoPresentationMode.Results
+                    && clipboardDisabledForm.ResultCountForTesting == 1
+                    && clipboardDisabledForm.SelectedActionIdForTesting
+                        == "clipboard.settings"
+                    && clipboardDisabledForm.SelectedActionKindForTesting
+                        == RaudoActionKind.Settings
+                    && clipboardDisabledForm.KeyboardHintForTesting.EndsWith(
+                        "abrir",
+                        StringComparison.Ordinal)
+                    && WindowsSettingsLauncher.ClipboardAddress
+                        == "ms-settings:clipboard",
+                "Salto no ofreció configurar el historial desactivado.");
             clipboardDisabledForm.AllowCloseAndClose();
         }
 
@@ -2825,9 +2832,41 @@ internal static class TestRunner
             mainIcon))
         {
             mainForm.ApplyTheme(highContrast);
+            mainForm.Show();
+            Application.DoEvents();
+            Assert(
+                mainForm.AutoScroll
+                    && mainForm.AutoScrollMargin == Size.Empty
+                    && !mainForm.VerticalScroll.Visible
+                    && !mainForm.HorizontalScroll.Visible,
+                "La ventana principal mostró desplazamiento artificial al 100%.");
             AssertAccessibleControls(mainForm);
             ScaleToTargetDpi(mainForm, 144);
+            Application.DoEvents();
             AssertControlsWithinParent(mainForm);
+            Assert(
+                !mainForm.VerticalScroll.Visible
+                    && !mainForm.HorizontalScroll.Visible,
+                "La ventana principal mostró desplazamiento artificial al 150%.");
+
+            int contentBottom = 0;
+            foreach (Control child in mainForm.Controls)
+            {
+                if (child.Visible)
+                {
+                    contentBottom = Math.Max(contentBottom, child.Bottom);
+                }
+            }
+
+            mainForm.ClientSize = new Size(
+                mainForm.ClientSize.Width,
+                Math.Max(1, contentBottom - 1));
+            mainForm.PerformLayout();
+            Application.DoEvents();
+            Assert(
+                mainForm.VerticalScroll.Visible
+                    && !mainForm.HorizontalScroll.Visible,
+                "La ventana principal perdió el desplazamiento cuando el contenido no cabe.");
             mainForm.AllowCloseAndClose();
         }
 

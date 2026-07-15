@@ -50,6 +50,32 @@ namespace Raudo
         }
     }
 
+    internal static class WindowsSettingsLauncher
+    {
+        internal const string ClipboardAddress = "ms-settings:clipboard";
+
+        public static string TryOpenClipboard()
+        {
+            try
+            {
+                ProcessStartInfo info = new ProcessStartInfo();
+                info.FileName = ClipboardAddress;
+                info.UseShellExecute = true;
+                Process process = Process.Start(info);
+                if (process != null)
+                {
+                    process.Dispose();
+                }
+
+                return null;
+            }
+            catch (Exception)
+            {
+                return "Windows no pudo abrir la configuración del portapapeles.";
+            }
+        }
+    }
+
     internal static class BrowserLauncher
     {
         private static readonly Uri YouTubeAddress = new Uri("https://www.youtube.com/");
