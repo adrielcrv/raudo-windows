@@ -69,7 +69,7 @@ namespace Raudo
 
             descriptionLabel = CreateLabel(
                 changes
-                    ? "Salto recupera textos bajo demanda y Raudo se adapta mejor entre pantallas."
+                    ? "La ventana usa mejor el espacio y el portapapeles se configura desde Salto."
                     : "Acciones rápidas, voz local y controles discretos para trabajar en Windows.",
                 9.25F,
                 FontStyle.Regular,
@@ -393,11 +393,11 @@ namespace Raudo
             {
                 new WelcomeFeatureDefinition(
                     "Portapapeles",
-                    "Hasta cinco textos recientes",
+                    "Configuración directa",
                     WelcomeFeatureGlyph.Clipboard),
                 new WelcomeFeatureDefinition(
-                    "Pantallas mixtas",
-                    "Mini conserva su lugar",
+                    "Ventana limpia",
+                    "Scroll sólo si hace falta",
                     WelcomeFeatureGlyph.Displays),
                 new WelcomeFeatureDefinition(
                     "Bajo demanda",
@@ -1017,8 +1017,8 @@ namespace Raudo
         {
             DrawHeading(
                 graphics,
-                "Recupera textos cuando los necesitas",
-                "Escribe “portapapeles” en Salto",
+                "Activa el historial sin perder el flujo",
+                "Enter abre la configuración de Windows",
                 text,
                 muted);
             FillRound(graphics, new Rectangle(266, 40, 268, 120), 16, raised);
@@ -1055,8 +1055,8 @@ namespace Raudo
         {
             DrawHeading(
                 graphics,
-                "Mini conserva su lugar entre pantallas",
-                "Escala, resolución y área de trabajo",
+                "La interfaz usa el espacio necesario",
+                "Scroll sólo cuando el contenido no cabe",
                 text,
                 muted);
             FillRound(graphics, new Rectangle(264, 47, 122, 91), 14, raised);

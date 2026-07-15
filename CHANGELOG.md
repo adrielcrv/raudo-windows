@@ -4,6 +4,12 @@ Este proyecto utiliza versionado semántico.
 
 ## [Sin publicar]
 
+## [1.10.1] - 2026-07-14
+
+- La ventana principal ya no muestra una barra vertical cuando todo su contenido es visible.
+- El desplazamiento automático se conserva para áreas realmente reducidas y configuraciones con DPI mixto.
+- Cuando el historial del portapapeles está desactivado, Salto ofrece una acción para abrir directamente su configuración nativa de Windows.
+
 ## [1.10.0] - 2026-07-14
 
 - Consulta explícita del historial de portapapeles de Windows al escribir `portapapeles` o `clipboard` en Salto, con filtro opcional y máximo de cinco textos.

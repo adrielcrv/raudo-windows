@@ -29,7 +29,9 @@ hasta cinco filas para búsquedas amplias y mantiene el resto mediante rueda o
 teclado. Puede moverse desde el agarre inferior y alternar tres niveles de
 opacidad con Ctrl + Shift + O. Raudo no recorre el disco ni conserva las
 consultas. El modo portapapeles no mantiene un listener ni un historial propio y
-libera sus textos al salir. Un resultado sólo se copia después de seleccionarlo. Si Ctrl + Alt +
+libera sus textos al salir. Si el historial está desactivado, Salto puede abrir
+su página nativa de Configuración para que el usuario decida habilitarlo. Un
+resultado sólo se copia después de seleccionarlo. Si Ctrl + Alt +
 Espacio ya pertenece a otra aplicación, Salto permanece disponible desde la
 bandeja.
 

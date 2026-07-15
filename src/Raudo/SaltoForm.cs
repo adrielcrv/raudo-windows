@@ -874,6 +874,20 @@ namespace Raudo
                         delegate { return ClipboardWriter.TryCopy(text); }));
                 }
             }
+            else if (result.Status == ClipboardHistoryQueryStatus.Disabled)
+            {
+                resultList.Items.Add(new RaudoAction(
+                    "clipboard.settings",
+                    "Activar historial del portapapeles",
+                    "Abre Configuración > Sistema > Portapapeles",
+                    string.Empty,
+                    "Abrir",
+                    RaudoActionGlyph.Clipboard,
+                    RaudoActionKind.Settings,
+                    false,
+                    0,
+                    WindowsSettingsLauncher.TryOpenClipboard));
+            }
 
             resultList.EndUpdate();
             bool hasItems = resultList.Items.Count > 0;
@@ -957,7 +971,7 @@ namespace Raudo
             switch (status)
             {
                 case ClipboardHistoryQueryStatus.Disabled:
-                    return "Activa el historial de Windows con Win + V";
+                    return "El historial del portapapeles está desactivado";
                 case ClipboardHistoryQueryStatus.AccessDenied:
                     return "Windows bloqueó el acceso al historial";
                 case ClipboardHistoryQueryStatus.Unavailable:
@@ -1083,6 +1097,7 @@ namespace Raudo
                         : "abrir";
                     break;
                 case RaudoActionKind.Application:
+                case RaudoActionKind.Settings:
                 case RaudoActionKind.Folder:
                     verb = "abrir";
                     break;

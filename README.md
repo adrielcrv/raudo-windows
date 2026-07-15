@@ -54,6 +54,7 @@ SHA-256 o realizar una instalación no interactiva.
 - Abre carpetas conocidas de Windows sólo cuando resuelven a una ubicación local existente.
 - Copia un cálculo o conversión únicamente después de seleccionarlo.
 - Al escribir `portapapeles` o `clipboard`, consulta bajo demanda hasta cinco textos del historial administrado por Windows; puede añadirse un filtro después del comando.
+- Si el historial está desactivado, Salto ofrece abrir directamente `Configuración > Sistema > Portapapeles` para que el usuario decida habilitarlo.
 - Libera esos textos al cambiar de consulta o cerrar Salto y no mantiene un listener ni un historial propio.
 - Controla reproducción, cambio de pista, silencio y volumen mediante las teclas multimedia de Windows.
 - Permite iniciar o detener Pulso, abrir Recortes y Raudo, controlar Modo Mini y cambiar entre escritorios disponibles.
